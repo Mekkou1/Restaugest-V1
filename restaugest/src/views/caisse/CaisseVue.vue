@@ -122,7 +122,6 @@
 <script>
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
 import { useStore } from 'vuex';
-import { useRouter } from 'vue-router';
 
 // Composants
 import TicketManager from '@/components/caisse/TicketManager.vue';
@@ -158,7 +157,6 @@ export default {
 
   setup() {
     const store = useStore();
-    const router = useRouter();
 
     // État
     const caisse = ref({
@@ -194,7 +192,7 @@ export default {
     });
 
     const getStatusIcon = computed(() => {
-      return caisse.value.etat === 'OUVERTE' ? 
+      return caisse.value.etat === 'OUVERTE' ?
         'fas fa-door-open' : 'fas fa-door-closed';
     });
 
@@ -224,7 +222,7 @@ export default {
         await api.post('/caisse/ouvrir', data);
         await loadCaisse();
         showFondsModal.value = false;
-        
+
         store.dispatch('showNotification', {
           type: 'success',
           message: 'Caisse ouverte avec succès'
@@ -246,7 +244,7 @@ export default {
         await api.post('/caisse/fermer', data);
         await loadCaisse();
         showClotureModal.value = false;
-        
+
         store.dispatch('showNotification', {
           type: 'success',
           message: 'Caisse fermée avec succès'
@@ -288,6 +286,7 @@ export default {
   }
 };
 </script>
+
 
 <style scoped>
 .caisse-view {

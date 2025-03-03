@@ -46,7 +46,9 @@
           </select>
         </div>
       </div>
-  
+      <div v-if="newAlert" class="alert alert-success">
+        Nouvelle alerte reçue: {{ newAlert.titre }}
+      </div>
       <!-- Liste des alertes -->
       <div class="alertes-list">
         <div 

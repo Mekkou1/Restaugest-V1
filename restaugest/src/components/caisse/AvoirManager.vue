@@ -157,7 +157,7 @@
   </template>
   
   <script>
-  import { ref, computed } from 'vue';
+  import { ref, computed, onMounted } from 'vue';
   import { useStore } from 'vuex';
   import api from '@/utils/api';
   
@@ -182,7 +182,7 @@
         return avoirs.value.filter(avoir => {
           const matchQuery = avoir.reference.toLowerCase()
             .includes(searchQuery.value.toLowerCase());
-          const matchStatus = !filterStatus.value || 
+          const matchStatus = !filterStatus.value ||
             getAvoirStatus(avoir).toLowerCase() === filterStatus.value;
           return matchQuery && matchStatus;
         });
@@ -347,6 +347,8 @@
     }
   };
   </script>
+  
+
   
   <style scoped>
   .avoir-manager {
