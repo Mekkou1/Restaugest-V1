@@ -1,145 +1,303 @@
 import { createStore } from 'vuex';
-import api from '../utils/api';
+import api from '@/utils/api';
 
+// Importation des modules
+import caisse from './modules/caisse';
+import serveur from './modules/serveur';
+import cuisine from './modules/cuisine';
+import stock from './modules/stock';
+import admin from './modules/admin';
+import commandes from './modules/commandes';
+import tables from './modules/tables';
+import menu from './modules/menu';
+import utilisateurs from './modules/utilisateurs';
+import stats from './modules/stats';
 
-export default createStore({
+// Création du store avec tous les modules
+const store = createStore({
+  modules: {
+    caisse,
+    serveur,
+    cuisine,
+    stock,
+    admin,
+    commandes,
+    tables,
+    menu,
+    utilisateurs,
+    stats
+  },
+  
   state: {
     user: null,
-    token: null,
-    refreshToken: null,
-    modals: {
-      fonds: false
+    isAuthenticated: false,
+    loading: false,
+    error: null,
+    notifications: [],
+    settings: {
+      theme: 'light',
+      language: 'fr',
+      notifications: {
+        sound: true,
+        desktop: true
+      }
+    },
+    systemStatus: {
+      online: true,
+      lastSync: null,
+      version: process.env.VUE_APP_VERSION,
+      maintenance: false
+    }
+  },
+
+  getters: {
+    isAuthenticated: state => state.isAuthenticated,
+    userRole: state => state.user?.role,
+    currentUser: state => state.user,
+    hasError: state => state.error !== null,
+    isLoading: state => state.loading,
+    notifications: state => state.notifications,
+    settings: state => state.settings,
+    isSystemOnline: state => state.systemStatus.online,
+    isInMaintenance: state => state.systemStatus.maintenance,
+    canAccessModule: (state) => (module) => {
+      const rolePermissions = {
+        'Administrateur': ['admin', 'caisse', 'cuisine', 'serveur', 'stock', 'stats'],
+        'Caissier': ['caisse'],
+        'Serveur': ['serveur'],
+        'Cuisinier': ['cuisine']
+      };
+      return rolePermissions[state.user?.role]?.includes(module) || false;
+    },
+    userPermissions: state => state.user?.permissions || []
+  },
+
+  actions: {
+    // Authentification
+    async login({ commit, dispatch }, credentials) {
+      commit('SET_LOADING', true);
+      try {
+        const response = await api.post('/auth/login', credentials);
+        commit('SET_USER', response.data.user);
+        commit('SET_AUTHENTICATED', true);
+        
+        // Charger les données initiales selon le rôle
+        await dispatch('loadInitialData');
+        
+        return { success: true };
+      } catch (error) {
+        commit('SET_ERROR', error.message);
+        return { success: false, error: error.message };
+      } finally {
+        commit('SET_LOADING', false);
+      }
+    },
+
+    async logout({ commit }) {
+      try {
+        await api.post('/auth/logout');
+      } finally {
+        // Réinitialiser tous les modules
+        commit('RESET_ALL_MODULES');
+        commit('SET_USER', null);
+        commit('SET_AUTHENTICATED', false);
+      }
+    },
+
+    async refreshToken({ commit }) {
+      try {
+        const response = await api.post('/auth/refresh');
+        commit('UPDATE_TOKEN', response.data.token);
+        return true;
+      } catch (error) {
+        commit('SET_ERROR', error.message);
+        return false;
+      }
+    },
+
+    // Chargement initial des données
+    async loadInitialData({ dispatch, getters }) {
+      const role = getters.userRole;
+      
+      switch (role) {
+        case 'Administrateur':
+          await Promise.all([
+            dispatch('admin/loadDashboard'),
+            dispatch('stats/loadGlobalStats'),
+            dispatch('stock/loadInventaire')
+          ]);
+          break;
+          
+        case 'Caissier':
+          await Promise.all([
+            dispatch('caisse/loadCaisseData'),
+            dispatch('commandes/loadCommandesEnCours')
+          ]);
+          break;
+          
+        case 'Serveur':
+          await Promise.all([
+            dispatch('serveur/loadTables'),
+            dispatch('menu/loadCarteActive'),
+            dispatch('commandes/loadCommandesServeur')
+          ]);
+          break;
+          
+        case 'Cuisinier':
+          await Promise.all([
+            dispatch('cuisine/loadCommandesEnPreparation'),
+            dispatch('stock/loadStockCuisine')
+          ]);
+          break;
+      }
+    },
+
+    // Gestion des notifications
+    showNotification({ commit }, notification) {
+      const id = Date.now();
+      const notif = {
+        id,
+        timestamp: new Date(),
+        ...notification
+      };
+      
+      commit('ADD_NOTIFICATION', notif);
+      
+      // Auto-suppression après 5 secondes pour les notifications non persistantes
+      if (!notification.persistent) {
+        setTimeout(() => {
+          commit('REMOVE_NOTIFICATION', id);
+        }, 5000);
+      }
+
+      // Notification sonore si activée
+      if (this.state.settings.notifications.sound) {
+        const audio = new Audio('/notification.mp3');
+        audio.play();
+      }
+
+      // Notification desktop si activée et supportée
+      if (this.state.settings.notifications.desktop && 'Notification' in window) {
+        if (Notification.permission === 'granted') {
+          new Notification(notification.title || 'Restaugest', {
+            body: notification.message,
+            icon: '/icon.png'
+          });
+        }
+      }
+    },
+
+    dismissNotification({ commit }, id) {
+      commit('REMOVE_NOTIFICATION', id);
+    },
+
+    // Gestion des paramètres
+    updateSettings({ commit }, settings) {
+      commit('UPDATE_SETTINGS', settings);
+      localStorage.setItem('settings', JSON.stringify(settings));
+    },
+
+    // Gestion du système
+    async checkSystemStatus({ commit }) {
+      try {
+        const response = await api.get('/system/status');
+        commit('UPDATE_SYSTEM_STATUS', response.data);
+      } catch (error) {
+        commit('SET_SYSTEM_OFFLINE');
+      }
+    },
+
+    // Gestion des erreurs
+    clearError({ commit }) {
+      commit('SET_ERROR', null);
     }
   },
 
   mutations: {
     SET_USER(state, user) {
-      // Flatten the user object structure
-      state.user = user ? {
-        id: user.id,
-        pseudo: user.pseudo,
-        role: user.role
-      } : null;
-    },
-    SET_TOKENS(state, { token, refreshToken }) {
-      state.token = token;
-      state.refreshToken = refreshToken;
-      if (token) {
-        localStorage.setItem('token', token);
-      }
-      if (refreshToken) {
-        localStorage.setItem('refreshToken', refreshToken);
-      }
+      state.user = user;
     },
 
-    CLEAR_USER(state) {
-      state.user = null;
+    SET_AUTHENTICATED(state, isAuthenticated) {
+      state.isAuthenticated = isAuthenticated;
     },
-    SET_MODAL_STATE(state, { modal, value }) {
-      state.modals[modal] = value;
-    }
-  },
-  actions: {
-    async login({ commit }, credentials) {
-      console.log('Login action started with credentials:', credentials);
-      try {
-        const response = await api.post('/auth/login', credentials);
-        console.log('Login response received:', response.data);
 
-        
-        if (response.data.token && response.data.refreshToken) {
-          console.log('Valid tokens received, committing to store');
-          commit('SET_USER', response.data.user);
-          commit('SET_TOKENS', {
-            token: response.data.token,
-            refreshToken: response.data.refreshToken
-          });
-          console.log('Store updated successfully');
-          return response.data;
+    UPDATE_TOKEN(state, token) {
+      // Mise à jour du token dans l'instance axios
+      api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+    },
+
+    SET_LOADING(state, loading) {
+      state.loading = loading;
+    },
+
+    SET_ERROR(state, error) {
+      state.error = error;
+    },
+
+    ADD_NOTIFICATION(state, notification) {
+      state.notifications.push(notification);
+    },
+
+    REMOVE_NOTIFICATION(state, id) {
+      state.notifications = state.notifications.filter(n => n.id !== id);
+    },
+
+    UPDATE_SETTINGS(state, settings) {
+      state.settings = { ...state.settings, ...settings };
+    },
+
+    UPDATE_SYSTEM_STATUS(state, status) {
+      state.systemStatus = { ...state.systemStatus, ...status, online: true };
+    },
+
+    SET_SYSTEM_OFFLINE(state) {
+      state.systemStatus.online = false;
+    },
+
+    RESET_ALL_MODULES(state) {
+      // Réinitialiser l'état de tous les modules
+      Object.keys(this.state).forEach(module => {
+        if (this._modules.root._children[module]?.state) {
+          this.commit(`${module}/RESET_STATE`);
         }
-        console.error('Login failed: Missing tokens in response');
-        throw new Error('Login failed');
-
-      } catch (error) {
-        console.error('Login error:', error);
-        console.error('Error details:', {
-          message: error.message,
-          response: error.response?.data
-        });
-        throw error;
-      }
-    },
-
-    async refreshToken({ commit }) {
-      console.log('Refresh token action started');
-      try {
-        const refreshToken = localStorage.getItem('refreshToken');
-        if (!refreshToken) {
-          console.error('No refresh token available');
-          throw new Error('No refresh token available');
-        }
-        
-        const response = await api.post('/auth/refresh', { refreshToken });
-        console.log('Refresh token response received:', response.data);
-
-        
-        if (response.data.token) {
-          console.log('New tokens received, committing to store');
-          commit('SET_TOKENS', {
-            token: response.data.token,
-            refreshToken: response.data.refreshToken
-          });
-          console.log('Store updated with new tokens');
-          return response.data;
-        }
-        console.error('Token refresh failed: Missing token in response');
-        throw new Error('Token refresh failed');
-
-      } catch (error) {
-        console.error('Token refresh error:', error);
-        console.error('Error details:', {
-          message: error.message,
-          response: error.response?.data
-        });
-        throw error;
-      }
-    },
-
-
-    setUser({ commit }, user) {
-      commit('SET_USER', user);
-    },
-    clearUser({ commit }) {
-      console.log('Clearing user data from store');
-      commit('CLEAR_USER');
-      commit('SET_TOKENS', { token: null, refreshToken: null });
-      localStorage.removeItem('token');
-      localStorage.removeItem('refreshToken');
-      console.log('Store cleared successfully');
-    },
-
-    logout({ dispatch }) {
-      console.log('Logout action started');
-      return new Promise((resolve) => {
-        dispatch('clearUser');
-        resolve();
       });
-    },
-
-
-
-    setModalState({ commit }, { modal, value }) {
-      commit('SET_MODAL_STATE', { modal, value });
     }
-  },
-
-  getters: {
-    isAuthenticated: state => !!state.token,
-    userRole: state => state.user?.role,
-    userId: state => state.user?.id,
-    getModalState: state => modal => state.modals[modal],
-    token: state => state.token,
-    refreshToken: state => state.refreshToken
   }
-
 });
+
+// Plugin pour sauvegarder l'état dans le localStorage
+store.subscribe((mutation, state) => {
+  // Sauvegarder uniquement les données non sensibles
+  const persistedData = {
+    isAuthenticated: state.isAuthenticated,
+    settings: state.settings,
+    user: state.user ? {
+      id: state.user.id,
+      nom: state.user.nom,
+      role: state.user.role,
+      preferences: state.user.preferences
+    } : null
+  };
+  localStorage.setItem('store', JSON.stringify(persistedData));
+});
+
+// Restaurer l'état depuis le localStorage
+const persistedData = localStorage.getItem('store');
+if (persistedData) {
+  const { isAuthenticated, user, settings } = JSON.parse(persistedData);
+  store.commit('SET_AUTHENTICATED', isAuthenticated);
+  if (user) {
+    store.commit('SET_USER', user);
+  }
+  if (settings) {
+    store.commit('UPDATE_SETTINGS', settings);
+  }
+}
+
+// Vérification périodique du statut du système
+setInterval(() => {
+  store.dispatch('checkSystemStatus');
+}, 30000);
+
+export default store;

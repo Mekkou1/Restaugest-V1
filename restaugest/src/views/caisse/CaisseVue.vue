@@ -1,191 +1,445 @@
 <template>
-  <DashboardLayout :title="'Module Caisse'" :menuItems="menuItems">
-    <div class="container-fluid">
-      <!-- En-tête avec informations de la caisse -->
-      <div class="row mb-4">
-        <div class="col-md-4">
-          <div class="card">
-            <div class="card-body">
-              <h5 class="card-title">Solde Caisse</h5>
-              <p class="card-text amount">{{ formatMontant(caisse.solde) }} FCFA</p>
-            </div>
-          </div>
-        </div>
-        <div class="col-md-4">
-          <div class="card">
-            <div class="card-body">
-              <h5 class="card-title">Transactions du jour</h5>
-              <p class="card-text amount">{{ caisse.transactions }}</p>
-            </div>
-          </div>
-        </div>
-        <div class="col-md-4">
-          <div class="card">
-            <div class="card-body">
-              <h5 class="card-title">Date & Heure</h5>
-              <p class="card-text">{{ dateHeure }}</p>
-            </div>
-          </div>
+  <div class="caisse-view">
+    <!-- En-tête avec informations de la caisse -->
+    <header class="caisse-header">
+      <div class="caisse-info">
+        <h1>{{ caisse.nom }}</h1>
+        <div class="status-badge" :class="getStatusClass">
+          <i :class="getStatusIcon"></i>
+          {{ caisse.etat }}
         </div>
       </div>
-
-      <!-- Contenu principal -->
-      <div class="row">
-        <div class="col-12">
-          <router-view></router-view>
-        </div>
+      <div class="caisse-actions">
+        <button 
+          v-if="caisse.etat === 'FERMEE'"
+          class="btn btn-success"
+          @click="ouvrirCaisse"
+        >
+          <i class="fas fa-door-open"></i>
+          Ouvrir la caisse
+        </button>
+        <button 
+          v-else-if="caisse.etat === 'OUVERTE'"
+          class="btn btn-warning"
+          @click="fermerCaisse"
+        >
+          <i class="fas fa-door-closed"></i>
+          Fermer la caisse
+        </button>
       </div>
+    </header>
 
-      <!-- Modal Fonds de Caisse -->
-      <FondsModal 
-        v-if="showFondsModal" 
+    <!-- Menu principal -->
+    <nav class="caisse-nav">
+      <button 
+        v-for="tab in tabs"
+        :key="tab.id"
+        class="nav-tab"
+        :class="{ active: activeTab === tab.id }"
+        @click="activeTab = tab.id"
+      >
+        <i :class="tab.icon"></i>
+        {{ tab.label }}
+      </button>
+    </nav>
+
+    <!-- Contenu principal -->
+    <main class="caisse-content">
+      <!-- Tickets -->
+      <TicketManager 
+        v-if="activeTab === 'tickets'"
         :caisse="caisse"
-        @close="showFondsModal = false"
-        @save="saveFonds"
       />
-    </div>
-  </DashboardLayout>
+
+      <!-- Avoirs -->
+      <AvoirManager 
+        v-else-if="activeTab === 'avoirs'"
+        :caisse="caisse"
+      />
+
+      <!-- Fonds -->
+      <FondsManager 
+        v-else-if="activeTab === 'fonds'"
+        :caisse="caisse"
+      />
+
+      <!-- Transferts -->
+      <TransfertManager 
+        v-else-if="activeTab === 'transferts'"
+        :caisse="caisse"
+      />
+
+      <!-- Journal -->
+      <JournalCaisse 
+        v-else-if="activeTab === 'journal'"
+        :caisse="caisse"
+      />
+
+      <!-- Rapports -->
+      <RapportsCaisse 
+        v-else-if="activeTab === 'rapports'"
+        :caisse="caisse"
+      />
+
+      <!-- Statistiques -->
+      <StatsCaisse 
+        v-else-if="activeTab === 'stats'"
+        :caisse="caisse"
+      />
+
+      <!-- Configuration -->
+      <ConfigCaisse 
+        v-else-if="activeTab === 'config'"
+        :caisse="caisse"
+      />
+    </main>
+
+    <!-- Alertes -->
+    <AlertesCaisse 
+      v-if="showAlertes"
+      :caisse="caisse"
+      @close="showAlertes = false"
+    />
+
+    <!-- Modal d'ouverture -->
+    <FondsModal 
+      v-if="showFondsModal"
+      :caisse="caisse"
+      @close="showFondsModal = false"
+      @submit="confirmerOuverture"
+    />
+
+    <!-- Modal de clôture -->
+    <ClotureManager 
+      v-if="showClotureModal"
+      :caisse="caisse"
+      @close="showClotureModal = false"
+      @submit="confirmerFermeture"
+    />
+  </div>
 </template>
 
 <script>
-import { ref, onMounted, onUnmounted } from 'vue'
-import DashboardLayout from '@/components/DashboardLayout.vue'
-import FondsModal from '@/components/caisse/FondsModal.vue'
-import api from '@/utils/api'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
+import { useStore } from 'vuex';
+import { useRouter } from 'vue-router';
+
+// Composants
+import TicketManager from '@/components/caisse/TicketManager.vue';
+import AvoirManager from '@/components/caisse/AvoirManager.vue';
+import FondsManager from '@/components/caisse/FondsManager.vue';
+import TransfertManager from '@/components/caisse/TransfertManager.vue';
+import JournalCaisse from '@/components/caisse/JournalCaisse.vue';
+import RapportsCaisse from '@/components/caisse/RapportsCaisse.vue';
+import StatsCaisse from '@/components/caisse/StatsCaisse.vue';
+import ConfigCaisse from '@/components/caisse/ConfigCaisse.vue';
+import AlertesCaisse from '@/components/caisse/AlertesCaisse.vue';
+import FondsModal from '@/components/caisse/FondsModal.vue';
+import ClotureManager from '@/components/caisse/ClotureManager.vue';
+
+import api from '@/utils/api';
 
 export default {
-  name: 'CaisseVue',
+  name: 'CaisseView',
+
   components: {
-    DashboardLayout,
-    FondsModal
+    TicketManager,
+    AvoirManager,
+    FondsManager,
+    TransfertManager,
+    JournalCaisse,
+    RapportsCaisse,
+    StatsCaisse,
+    ConfigCaisse,
+    AlertesCaisse,
+    FondsModal,
+    ClotureManager
   },
+
   setup() {
-    const showFondsModal = ref(false)
+    const store = useStore();
+    const router = useRouter();
+
+    // État
     const caisse = ref({
       id: null,
-      solde: 0,
-      transactions: 0,
-      etat: 'fermée'
-    })
-    const dateHeure = ref('')
-    let timer = null
+      nom: '',
+      etat: 'FERMEE',
+      solde: 0
+    });
+    const activeTab = ref('tickets');
+    const showAlertes = ref(false);
+    const showFondsModal = ref(false);
+    const showClotureModal = ref(false);
+    let pollingInterval = null;
 
-    const menuItems = [
-      { 
-        name: 'tickets', 
-        label: 'Tickets', 
-        path: '/caisse/tickets',
-        icon: 'fas fa-receipt'
-      },
-      { 
-        name: 'paiement', 
-        label: 'Paiement', 
-        path: '/caisse/paiement',
-        icon: 'fas fa-cash-register'
-      },
-      { 
-        name: 'fonds', 
-        label: 'Fonds de Caisse', 
-        path: '/caisse/fonds',
-        icon: 'fas fa-money-bill-wave'
-      },
-      { 
-        name: 'rapports', 
-        label: 'Rapports', 
-        path: '/caisse/rapports',
-        icon: 'fas fa-chart-bar'
-      }
-    ]
+    // Onglets disponibles
+    const tabs = [
+      { id: 'tickets', label: 'Tickets', icon: 'fas fa-receipt' },
+      { id: 'avoirs', label: 'Avoirs', icon: 'fas fa-ticket-alt' },
+      { id: 'fonds', label: 'Fonds', icon: 'fas fa-money-bill-wave' },
+      { id: 'transferts', label: 'Transferts', icon: 'fas fa-exchange-alt' },
+      { id: 'journal', label: 'Journal', icon: 'fas fa-history' },
+      { id: 'rapports', label: 'Rapports', icon: 'fas fa-chart-bar' },
+      { id: 'stats', label: 'Statistiques', icon: 'fas fa-chart-line' },
+      { id: 'config', label: 'Configuration', icon: 'fas fa-cog' }
+    ];
 
-    const updateDateTime = () => {
-      const now = new Date()
-      dateHeure.value = now.toLocaleString('fr-FR', {
-        dateStyle: 'full',
-        timeStyle: 'medium'
-      })
-    }
+    // Computed
+    const getStatusClass = computed(() => {
+      return {
+        'status-open': caisse.value.etat === 'OUVERTE',
+        'status-closed': caisse.value.etat === 'FERMEE'
+      };
+    });
 
-    const formatMontant = (montant) => {
-      return new Intl.NumberFormat('fr-FR').format(montant)
-    }
+    const getStatusIcon = computed(() => {
+      return caisse.value.etat === 'OUVERTE' ? 
+        'fas fa-door-open' : 'fas fa-door-closed';
+    });
 
-    const fetchCaisseInfo = async () => {
+    // Méthodes
+    const loadCaisse = async () => {
       try {
-        const response = await api.get('/caisse/info')
-        caisse.value = response.data
+        const response = await api.get('/caisse/current');
+        caisse.value = response.data;
       } catch (error) {
-        console.error('Erreur lors de la récupération des informations de caisse:', error)
+        store.dispatch('showNotification', {
+          type: 'error',
+          message: 'Erreur lors du chargement de la caisse'
+        });
       }
-    }
+    };
 
-    const saveFonds = async (data) => {
+    const startPolling = () => {
+      pollingInterval = setInterval(loadCaisse, 30000); // 30 secondes
+    };
+
+    const ouvrirCaisse = () => {
+      showFondsModal.value = true;
+    };
+
+    const confirmerOuverture = async (data) => {
       try {
-        await api.post('/caisse/fonds', data)
-        await fetchCaisseInfo()
-        showFondsModal.value = false
+        await api.post('/caisse/ouvrir', data);
+        await loadCaisse();
+        showFondsModal.value = false;
+        
+        store.dispatch('showNotification', {
+          type: 'success',
+          message: 'Caisse ouverte avec succès'
+        });
       } catch (error) {
-        console.error('Erreur lors de l\'enregistrement des fonds:', error)
+        store.dispatch('showNotification', {
+          type: 'error',
+          message: 'Erreur lors de l\'ouverture de la caisse'
+        });
       }
-    }
+    };
 
+    const fermerCaisse = () => {
+      showClotureModal.value = true;
+    };
+
+    const confirmerFermeture = async (data) => {
+      try {
+        await api.post('/caisse/fermer', data);
+        await loadCaisse();
+        showClotureModal.value = false;
+        
+        store.dispatch('showNotification', {
+          type: 'success',
+          message: 'Caisse fermée avec succès'
+        });
+      } catch (error) {
+        store.dispatch('showNotification', {
+          type: 'error',
+          message: 'Erreur lors de la fermeture de la caisse'
+        });
+      }
+    };
+
+    // Lifecycle hooks
     onMounted(() => {
-      fetchCaisseInfo()
-      updateDateTime()
-      timer = setInterval(updateDateTime, 1000)
-    })
+      loadCaisse();
+      startPolling();
+    });
 
-    onUnmounted(() => {
-      if (timer) clearInterval(timer)
-    })
+    onBeforeUnmount(() => {
+      if (pollingInterval) {
+        clearInterval(pollingInterval);
+      }
+    });
 
     return {
-      showFondsModal,
       caisse,
-      dateHeure,
-      menuItems,
-      formatMontant,
-      saveFonds
-    }
+      activeTab,
+      tabs,
+      showAlertes,
+      showFondsModal,
+      showClotureModal,
+      getStatusClass,
+      getStatusIcon,
+      ouvrirCaisse,
+      confirmerOuverture,
+      fermerCaisse,
+      confirmerFermeture
+    };
   }
-}
+};
 </script>
 
 <style scoped>
-.card {
-  border: none;
-  box-shadow: 0 0 10px rgba(0,0,0,0.1);
-  margin-bottom: 1rem;
+.caisse-view {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
 }
 
-.card-title {
-  color: #666;
-  font-size: 1rem;
-  margin-bottom: 0.5rem;
+.caisse-header {
+  background: white;
+  padding: 1rem 2rem;
+  border-bottom: 1px solid #dee2e6;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
 }
 
-.amount {
-  font-size: 1.5rem;
-  font-weight: bold;
-  color: #ff6600;
+.caisse-info {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.caisse-info h1 {
   margin: 0;
+  font-size: 1.5rem;
 }
 
-.btn-primary {
-  background-color: #ff6600;
-  border-color: #ff6600;
+.status-badge {
+  padding: 0.5rem 1rem;
+  border-radius: 20px;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.875rem;
 }
 
-.btn-primary:hover {
-  background-color: #e65c00;
-  border-color: #e65c00;
+.status-open {
+  background: #d1e7dd;
+  color: #0f5132;
 }
 
-/* Animation pour les mises à jour de montants */
-.amount {
-  transition: color 0.3s ease;
+.status-closed {
+  background: #f8d7da;
+  color: #842029;
 }
 
-.amount.updated {
-  color: #28a745;
+.caisse-actions {
+  display: flex;
+  gap: 1rem;
+}
+
+.caisse-nav {
+  background: white;
+  padding: 0 2rem;
+  border-bottom: 1px solid #dee2e6;
+  display: flex;
+  gap: 1rem;
+  overflow-x: auto;
+}
+
+.nav-tab {
+  padding: 1rem;
+  border: none;
+  background: none;
+  color: #6c757d;
+  font-weight: 500;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  position: relative;
+}
+
+.nav-tab::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: transparent;
+  transition: background-color 0.2s ease;
+}
+
+.nav-tab:hover {
+  color: #ff6600;
+}
+
+.nav-tab.active {
+  color: #ff6600;
+}
+
+.nav-tab.active::after {
+  background: #ff6600;
+}
+
+.caisse-content {
+  flex: 1;
+  overflow-y: auto;
+  background: #f8f9fa;
+}
+
+.btn {
+  padding: 0.75rem 1.5rem;
+  border: none;
+  border-radius: 8px;
+  font-weight: 500;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.btn-success {
+  background: #28a745;
+  color: white;
+}
+
+.btn-warning {
+  background: #ffc107;
+  color: #000;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .caisse-header {
+    padding: 1rem;
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .caisse-info {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .caisse-actions {
+    width: 100%;
+  }
+
+  .caisse-actions .btn {
+    flex: 1;
+  }
+
+  .caisse-nav {
+    padding: 0 1rem;
+  }
+
+  .nav-tab {
+    padding: 0.75rem;
+    font-size: 0.875rem;
+  }
 }
 </style>
