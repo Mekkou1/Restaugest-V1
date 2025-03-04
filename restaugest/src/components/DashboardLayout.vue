@@ -4,16 +4,16 @@
       <div class="d-flex align-items-center">
         <img src="../assets/Logo.png" alt="Logo" class="logo me-2">
         <div class="user-info">
-          <h5 class="mb-0">{{ userName }}</h5>
-          <small>{{ userRole }}</small>
+          <h5 class="mb-0">{{ currentUser?.pseudo }}</h5>
+          <small>{{ currentUser?.role }}</small>
         </div>
       </div>
       <div class="d-flex align-items-center">
         <div class="date-heure me-4">
-          <div>{{ date }}</div>
-          <div>{{ heure }}</div>
+          <div>{{ currentDate }}</div>
+          <div>{{ currentTime }}</div>
         </div>
-        <button @click="logout" class="btn btn-outline-light">
+        <button @click="handleLogout" class="btn btn-outline-light">
           <i class="fas fa-sign-out-alt"></i>
           Déconnexion
         </button>
@@ -21,136 +21,180 @@
     </header>
 
     <div class="dashboard-container">
-      <aside class="sidebar bg-light p-3 d-flex flex-column h-100">
-        <nav class="flex-grow-1">
+      <aside class="sidebar bg-light p-3">
+        <nav>
           <ul class="list-unstyled">
-            <template v-if="userRole === 'Caissier'">
-              <li class="mb-2" @click="toggleGroup('gestion')">
-                <strong>Gestion des commandes</strong>
+            <!-- Menu pour Administrateur -->
+            <template v-if="isAdmin">
+              <li class="menu-section">
+                <h6 class="text-uppercase mb-3">Administration</h6>
+                <ul class="list-unstyled ps-3">
+                  <li>
+                    <router-link to="/dashboard/admin/users" class="menu-item">
+                      <i class="fas fa-users"></i>
+                      Utilisateurs
+                    </router-link>
+                  </li>
+                  <li>
+                    <router-link to="/dashboard/admin/salles" class="menu-item">
+                      <i class="fas fa-door-open"></i>
+                      Salles
+                    </router-link>
+                  </li>
+                  <li>
+                    <router-link to="/dashboard/admin/menu" class="menu-item">
+                      <i class="fas fa-utensils"></i>
+                      Menu
+                    </router-link>
+                  </li>
+                  <li>
+                    <router-link to="/dashboard/admin/stats" class="menu-item">
+                      <i class="fas fa-chart-bar"></i>
+                      Statistiques
+                    </router-link>
+                  </li>
+                </ul>
               </li>
-              <ul v-if="menuOuvert.gestion" class="list-unstyled ms-3">
-                <li class="mb-3 d-flex align-items-center" @click="afficherSection('tickets')">
-                  <img src="../assets/Tickets.jpg" alt="Tickets" class="me-2" style="width: 30px; height: 30px;">
-                  <span>Tickets</span>
-                </li>
-              </ul>
-              <li class="mb-2" @click="toggleGroup('finances')">
-                <strong>Finances</strong>
-              </li>
-              <ul v-if="menuOuvert.finances" class="list-unstyled ms-3">
-                <li class="mb-3 d-flex align-items-center" @click="afficherSection('payement')">
-                  <img src="../assets/Caisse.jpg" alt="Paiement" class="me-2" style="width: 30px; height: 30px;">
-                  <span>Paiement</span>
-                </li>
-                <li class="mb-3 d-flex align-items-center" @click="afficherSection('fonds')">
-                  <img src="../assets/Fonds1.jpg" alt="Fonds" class="me-2" style="width: 30px; height: 30px;">
-                  <span>Fonds</span>
-                </li>
-              </ul>
             </template>
 
-            <template v-if="userRole === 'Administrateur'">
-              <li class="mb-2" @click="toggleGroup('admin')">
-                <strong>Administration</strong>
+            <!-- Menu pour Caissier -->
+            <template v-if="isCaissier">
+              <li class="menu-section">
+                <h6 class="text-uppercase mb-3">Caisse</h6>
+                <ul class="list-unstyled ps-3">
+                  <li>
+                    <router-link to="/dashboard/caisse/tickets" class="menu-item">
+                      <i class="fas fa-receipt"></i>
+                      Tickets
+                    </router-link>
+                  </li>
+                  <li>
+                    <router-link to="/dashboard/caisse/paiements" class="menu-item">
+                      <i class="fas fa-cash-register"></i>
+                      Paiements
+                    </router-link>
+                  </li>
+                </ul>
               </li>
-              <ul v-if="menuOuvert.admin" class="list-unstyled ms-3">
-                <li class="mb-3 d-flex align-items-center" @click="afficherSection('users')">
-                  <i class="fas fa-users me-2"></i>
-                  <span>Utilisateurs</span>
-                </li>
-                <li class="mb-3 d-flex align-items-center" @click="afficherSection('settings')">
-                  <i class="fas fa-cog me-2"></i>
-                  <span>Paramètres</span>
-                </li>
-              </ul>
+            </template>
+
+            <!-- Menu pour Serveur -->
+            <template v-if="isServeur">
+              <li class="menu-section">
+                <h6 class="text-uppercase mb-3">Service</h6>
+                <ul class="list-unstyled ps-3">
+                  <li>
+                    <router-link to="/dashboard/serveur/commandes" class="menu-item">
+                      <i class="fas fa-clipboard-list"></i>
+                      Commandes
+                    </router-link>
+                  </li>
+                  <li>
+                    <router-link to="/dashboard/serveur/tables" class="menu-item">
+                      <i class="fas fa-chair"></i>
+                      Tables
+                    </router-link>
+                  </li>
+                </ul>
+              </li>
+            </template>
+
+            <!-- Menu pour Cuisinier -->
+            <template v-if="isCuisinier">
+              <li class="menu-section">
+                <h6 class="text-uppercase mb-3">Cuisine</h6>
+                <ul class="list-unstyled ps-3">
+                  <li>
+                    <router-link to="/dashboard/cuisine/commandes" class="menu-item">
+                      <i class="fas fa-utensils"></i>
+                      Commandes
+                    </router-link>
+                  </li>
+                  <li>
+                    <router-link to="/dashboard/cuisine/stock" class="menu-item">
+                      <i class="fas fa-warehouse"></i>
+                      Stock
+                    </router-link>
+                  </li>
+                </ul>
+              </li>
             </template>
           </ul>
         </nav>
       </aside>
 
-      <div class="main-content">
+      <main class="main-content p-4">
         <router-view></router-view>
-      </div>
+      </main>
     </div>
   </div>
 </template>
 
 <script>
-import { mapState } from 'vuex';
+import { ref, computed, onMounted, onUnmounted } from 'vue';
+import { useStore } from 'vuex';
+import { useRouter } from 'vue-router';
 
 export default {
   name: 'DashboardLayout',
-  data() {
-    return {
-      date: new Date().toLocaleDateString(),
-      heure: new Date().toLocaleTimeString(),
-      timer: null,
-      menuOuvert: {
-        gestion: false,
-        finances: false,
-        admin: false
+  
+  setup() {
+    const store = useStore();
+    const router = useRouter();
+    
+    // Time management
+    const currentDate = ref(new Date().toLocaleDateString());
+    const currentTime = ref(new Date().toLocaleTimeString());
+    let timer = null;
+
+    // Computed properties
+    const currentUser = computed(() => store.state.auth.user);
+    const isAdmin = computed(() => currentUser.value?.role === 'Administrateur');
+    const isCaissier = computed(() => currentUser.value?.role === 'Caissier');
+    const isServeur = computed(() => currentUser.value?.role === 'Serveur');
+    const isCuisinier = computed(() => currentUser.value?.role === 'Cuisinier');
+
+    // Methods
+    const updateTime = () => {
+      currentDate.value = new Date().toLocaleDateString();
+      currentTime.value = new Date().toLocaleTimeString();
+    };
+
+    const handleLogout = async () => {
+      try {
+        await store.dispatch('auth/logout');
+        router.push('/login');
+      } catch (error) {
+        console.error('Logout error:', error);
       }
     };
-  },
-  computed: {
-    ...mapState({
-      user: state => state.user || {}
-    }),
-    userName() {
-      return this.user?.pseudo || '';
-    },
-    userRole() {
-      return this.user?.role || '';
-    },
-    isAuthenticated() {
-      return this.$store.getters.isAuthenticated;
-    }
-  },
-  methods: {
-    toggleGroup(group) {
-      this.menuOuvert = { ...this.menuOuvert, [group]: !this.menuOuvert[group] };
-    },
-    afficherSection(path) {
-      this.$router.push(`/dashboard/${path}`);
-    },
-    logout() {
-      this.$store.dispatch('logout');
-      this.$router.push('/login');
-    },
-    updateTime() {
-      this.date = new Date().toLocaleDateString();
-      this.heure = new Date().toLocaleTimeString();
-    }
-  },
-  mounted() {
-    console.group('DashboardLayout Mounted');
-    console.log('Is authenticated:', this.isAuthenticated);
-    console.log('User:', this.user);
-    console.log('Current route:', this.$route.path);
-    
-    this.timer = setInterval(this.updateTime, 1000);
-    
-    if (!this.isAuthenticated) {
-      console.warn('User not authenticated, redirecting to login');
-      this.$router.push('/login');
-    } else {
-      console.log('DashboardLayout mounted successfully');
-    }
-    console.groupEnd();
-  },
 
-  beforeUnmount() {
-    console.log('DashboardLayout unmounting');
-    clearInterval(this.timer);
-  },
-  
-  created() {
-    console.group('DashboardLayout Created');
-    console.log('Initial user:', this.user);
-    console.log('Is authenticated:', this.isAuthenticated);
-    console.groupEnd();
+    // Lifecycle hooks
+    onMounted(() => {
+      // Start timer
+      timer = setInterval(updateTime, 1000);
+
+      // Check authentication
+      if (!store.getters['auth/isAuthenticated']) {
+        router.push('/login');
+      }
+    });
+
+    onUnmounted(() => {
+      if (timer) clearInterval(timer);
+    });
+
+    return {
+      currentUser,
+      currentDate,
+      currentTime,
+      isAdmin,
+      isCaissier,
+      isServeur,
+      isCuisinier,
+      handleLogout
+    };
   }
-
 };
 </script>
 
@@ -163,7 +207,7 @@ export default {
 
 .header-admin {
   box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-  position: relative; /* Ensure the modal is positioned correctly */
+  z-index: 1000;
 }
 
 .logo {
@@ -172,8 +216,72 @@ export default {
   object-fit: contain;
 }
 
-.user-info {
-  margin-left: 1rem;
+.dashboard-container {
+  flex: 1;
+  display: flex;
+  background-color: #f8f9fa;
+}
+
+.sidebar {
+  width: 250px;
+  min-height: calc(100vh - 64px);
+  border-right: 1px solid #dee2e6;
+}
+
+.main-content {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.menu-section {
+  margin-bottom: 2rem;
+}
+
+.menu-item {
+  display: flex;
+  align-items: center;
+  padding: 0.5rem 1rem;
+  color: #495057;
+  text-decoration: none;
+  border-radius: 4px;
+  margin-bottom: 0.5rem;
+  transition: all 0.2s ease;
+}
+
+.menu-item:hover {
+  background-color: #e9ecef;
+  color: #ff6600;
+}
+
+.menu-item.router-link-active {
+  background-color: #ff6600;
+  color: white;
+}
+
+.menu-item i {
+  width: 20px;
+  margin-right: 10px;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .sidebar {
+    position: fixed;
+    left: -250px;
+    top: 64px;
+    bottom: 0;
+    transition: left 0.3s ease;
+    background: white;
+    z-index: 1000;
+  }
+
+  .sidebar.active {
+    left: 0;
+  }
+
+  .main-content {
+    margin-left: 0;
+  }
 }
 
 .date-heure {
@@ -181,142 +289,11 @@ export default {
   font-size: 0.9rem;
 }
 
-.btn-outline-light {
-  border-width: 2px;
+.user-info small {
+  color: #adb5bd;
 }
 
 .btn-outline-light:hover {
   background-color: rgba(255,255,255,0.1);
-}
-
-small {
-  color: #adb5bd;
-  font-size: 0.8rem;
-}
-
-.dashboard-container {
-  flex: 1;
-  display: flex;
-  background-color: #f4f6f9;
-}
-
-.sidebar {
-  width: 250px;
-  background-color: white;
-  box-shadow: 2px 0 5px rgba(0,0,0,0.1);
-  padding: 1rem;
-}
-
-.menu-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.menu-item {
-  display: flex;
-  align-items: center;
-  padding: 0.75rem 1rem;
-  color: #333;
-  text-decoration: none;
-  border-radius: 4px;
-  transition: all 0.3s ease;
-}
-
-.menu-item i {
-  margin-right: 0.5rem;
-}
-
-.menu-item:hover {
-  background-color: #f8f9fa;
-  color: #ff6600;
-}
-
-.menu-item.active {
-  background-color: #ff6600;
-  color: white;
-}
-
-.session-warning-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.5);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-}
-
-.session-warning-modal {
-  background: white;
-  padding: 2rem;
-  border-radius: 8px;
-  max-width: 400px;
-  text-align: center;
-}
-
-.modal-actions {
-  margin-top: 1.5rem;
-  display: flex;
-  gap: 1rem;
-  justify-content: center;
-}
-
-.btn-primary {
-  background: #ff6600;
-  color: white;
-  padding: 0.5rem 1rem;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-}
-
-.btn-secondary {
-  background: #f0f0f0;
-  color: #333;
-  padding: 0.5rem 1rem;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-}
-
-.main-content {
-  flex: 1;
-  padding: 2rem;
-  overflow-y: auto;
-}
-
-aside {
-  width: 200px;
-  height: 100vh;
-}
-nav ul li {
-  cursor: pointer;
-  user-select: none;
-}
-
-/* Responsive Design */
-@media (max-width: 768px) {
-  .dashboard-container {
-    flex-direction: column;
-  }
-
-  .sidebar {
-    width: 100%;
-    margin-bottom: 1rem;
-  }
-
-  .menu-list {
-    flex-direction: row;
-    overflow-x: auto;
-    padding-bottom: 0.5rem;
-  }
-
-  .menu-item {
-    white-space: nowrap;
-  }
 }
 </style>

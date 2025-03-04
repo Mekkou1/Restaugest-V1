@@ -1,164 +1,115 @@
 const express = require("express");
 const router = express.Router();
-const db = require("../config/database");
-const { validate, sanitizeInput } = require('../middleware/validation');
-const logger = require('../utils/logger');
+const { Ticket, TableRestaurant, Salles } = require('../models');
+const { wss } = require('../server');
 
-// POST /api/tickets (pas besoin de /tickets dans le chemin)
+// Créer un ticket
 router.post("/", async (req, res) => {
-  let connection;
+  const { table_id, etat } = req.body;
+
+  if (!table_id || !etat) {
+    return res.status(400).json({ error: "Table ID et état sont requis" });
+  }
+
   try {
-    connection = await db.getConnection();
-    
-    console.log('Création de ticket - Body reçu:', req.body);
-    
-    const { reference, table_id, etat } = req.body;
+    // Générer une référence unique
+    const reference = `TK${Date.now()}${Math.floor(Math.random() * 1000)}`;
 
-    if (!reference || !table_id || !etat) {
-      return res.status(400).json({ 
-        success: false,
-        error: "Référence, table ID et état sont requis" 
-      });
+    const ticket = await Ticket.create({
+      reference,
+      table_id,
+      etat
+    });
+
+    // Notifier via WebSocket
+    if (wss) {
+      wss.broadcast(JSON.stringify({
+        message: "Nouvelle commande",
+        ticket_id: ticket.id
+      }));
     }
 
-    const sanitizedReference = sanitizeInput(reference);
-    const sanitizedEtat = sanitizeInput(etat);
-    const created_at = new Date();
-
-    await connection.beginTransaction();
-
-    // Vérification de l'unicité de la référence
-    const [existingTickets] = await connection.query(
-      "SELECT COUNT(*) AS count FROM tickets WHERE reference = ?",
-      [sanitizedReference]
-    );
-
-    if (existingTickets[0].count > 0) {
-      await connection.rollback();
-      return res.status(400).json({ 
-        success: false,
-        error: "Référence de ticket déjà utilisée" 
-      });
-    }
-
-    // Vérification de l'existence de la table
-    const [tableExists] = await connection.query(
-      "SELECT id FROM tables_restaurant WHERE id = ?",
-      [table_id]
-    );
-
-    if (tableExists.length === 0) {
-      await connection.rollback();
-      return res.status(404).json({ 
-        success: false,
-        error: "Table non trouvée" 
-      });
-    }
-
-    // Insertion du ticket
-    const [insertResult] = await connection.query(
-      "INSERT INTO tickets (reference, table_id, etat, created_at) VALUES (?, ?, ?, ?)",
-      [sanitizedReference, table_id, sanitizedEtat, created_at]
-    );
-
-    // Insertion dans l'historique
-    await connection.query(
-      "INSERT INTO historique_tickets (ticket_id, utilisateur_id, État, updated_at) VALUES (?, ?, ?, ?)",
-      [insertResult.insertId, null, sanitizedEtat, created_at]
-    );
-
-    await connection.commit();
-
-    logger.info(`Nouveau ticket créé: ${sanitizedReference}`);
-
-    // Émettre l'événement WebSocket via l'event emitter de l'app
-    if (req.app.emit) {
-      req.app.emit('newTicket', {
-        type: 'NOUVEAU_TICKET',
-        data: { 
-          ticket_id: insertResult.insertId,
-          reference: sanitizedReference
-        }
-      });
-    }
-
-    res.json({
-      success: true,
+    res.status(201).json({ 
       message: "Ticket créé avec succès !",
-      data: { 
-        ticket_id: insertResult.insertId,
-        reference: sanitizedReference,
-        created_at 
-      }
+      id: ticket.id,
+      reference: ticket.reference
     });
-
   } catch (err) {
-    if (connection) {
-      await connection.rollback();
-    }
-    logger.error('Erreur lors de la création du ticket:', err);
-    
-    res.status(500).json({
-      success: false,
-      error: "Erreur lors de la création du ticket",
-      details: process.env.NODE_ENV === 'development' ? err.message : undefined
-    });
-  } finally {
-    if (connection) {
-      connection.release();
-    }
+    console.error("Erreur lors de la création du ticket:", err);
+    res.status(500).json({ error: err.message });
   }
 });
 
-// GET /api/tickets
+// Récupérer tous les tickets
 router.get("/", async (req, res) => {
-  let connection;
   try {
-    connection = await db.getConnection();
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 10;
-    const offset = (page - 1) * limit;
-
-    const [totalCount] = await connection.query(
-      "SELECT COUNT(*) as total FROM tickets"
-    );
-
-    const [tickets] = await connection.query(
-      `SELECT t.*, tr.nom as table_nom, s.nom as salle_nom 
-       FROM tickets t 
-       LEFT JOIN tables_restaurant tr ON t.table_id = tr.id 
-       LEFT JOIN salles s ON tr.salle_id = s.id 
-       ORDER BY t.created_at DESC 
-       LIMIT ? OFFSET ?`,
-      [limit, offset]
-    );
-
-    const totalPages = Math.ceil(totalCount[0].total / limit);
-
-    res.json({
-      success: true,
-      data: {
-        tickets,
-        pagination: {
-          total: totalCount[0].total,
-          page,
-          totalPages,
-          limit
-        }
-      }
+    const tickets = await Ticket.findAll({
+      include: [{
+        model: TableRestaurant,
+        as: 'table',
+        include: [{
+          model: Salles,
+          as: 'salle'
+        }]
+      }],
+      order: [['created_at', 'DESC']]
     });
-
+    res.json(tickets);
   } catch (err) {
-    logger.error('Erreur lors de la récupération des tickets:', err);
-    res.status(500).json({
-      success: false,
-      error: "Erreur lors de la récupération des tickets",
-      details: process.env.NODE_ENV === 'development' ? err.message : undefined
+    console.error("Erreur lors de la récupération des tickets:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Get ticket by ID
+router.get("/:id", async (req, res) => {
+  const { id } = req.params;
+  try {
+    const ticket = await Ticket.findByPk(id, {
+      include: [{
+        model: TableRestaurant,
+        as: 'table',
+        include: [{
+          model: Salles,
+          as: 'salle'
+        }]
+      }]
     });
-  } finally {
-    if (connection) {
-      connection.release();
+    
+    if (!ticket) {
+      return res.status(404).json({ error: "Ticket non trouvé" });
     }
+    
+    res.json(ticket);
+  } catch (err) {
+    console.error("Erreur lors de la récupération du ticket:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Mettre à jour l'état d'un ticket
+router.put("/:id/etat", async (req, res) => {
+  const { id } = req.params;
+  const { etat } = req.body;
+
+  if (!etat) {
+    return res.status(400).json({ error: "L'état est requis" });
+  }
+
+  try {
+    const ticket = await Ticket.findByPk(id);
+    
+    if (!ticket) {
+      return res.status(404).json({ error: "Ticket non trouvé" });
+    }
+
+    ticket.etat = etat;
+    await ticket.save();
+
+    res.json({ message: "État du ticket mis à jour avec succès" });
+  } catch (err) {
+    console.error("Erreur lors de la mise à jour de l'état du ticket:", err);
+    res.status(500).json({ error: err.message });
   }
 });
 

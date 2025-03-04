@@ -3,121 +3,75 @@ import axios from 'axios';
 // Create axios instance
 const api = axios.create({
   baseURL: process.env.VUE_APP_API_URL || 'http://localhost:5000/api',
-  timeout: 10000,
   headers: {
     'Content-Type': 'application/json',
+    'Accept': 'application/json'
   },
+  timeout: 10000 // 10 seconds timeout
 });
 
-// Add request interceptor to include auth token
-api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('token');
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
-  }
-  return config;
-});
-
-// Add response interceptor to handle errors
-api.interceptors.response.use(
-  (response) => response,
-  (error) => {
-    if (error.response && error.response.status === 401) {
-      // Handle unauthorized errors
-      localStorage.removeItem('token');
-      localStorage.removeItem('user');
-      window.location.reload();
+// Add token to requests if it exists
+api.interceptors.request.use(
+  (config) => {
+    const token = localStorage.getItem('token');
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
     }
+    return config;
+  },
+  (error) => {
     return Promise.reject(error);
   }
 );
 
-// API functions
-export const checkAuth = () => {
-  return !!localStorage.getItem('token');
-};
+// Handle response errors
+api.interceptors.response.use(
+  (response) => response,
+  async (error) => {
+    const originalRequest = error.config;
 
-export const checkSessionTimeout = async () => {
-  try {
-    await api.get('/auth/check');
-    return true;
-  } catch (error) {
-    return false;
+    // If error is 401 and we haven't tried to refresh token yet
+    if (error.response?.status === 401 && !originalRequest._retry) {
+      originalRequest._retry = true;
+
+      try {
+        // Try to refresh token
+        const refreshToken = localStorage.getItem('refreshToken');
+        if (!refreshToken) {
+          throw new Error('No refresh token available');
+        }
+
+        const response = await api.post('/auth/refresh', { refreshToken });
+        const { token } = response.data;
+
+        // Update token in localStorage and axios headers
+        localStorage.setItem('token', token);
+        api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+        originalRequest.headers['Authorization'] = `Bearer ${token}`;
+
+        // Retry original request
+        return api(originalRequest);
+      } catch (refreshError) {
+        // If refresh fails, clear auth data and redirect to login
+        localStorage.removeItem('token');
+        localStorage.removeItem('refreshToken');
+        localStorage.removeItem('user');
+        window.location.href = '/login';
+        return Promise.reject(refreshError);
+      }
+    }
+
+    // Handle network errors
+    if (!error.response) {
+      console.error('Network Error:', error);
+      return Promise.reject({
+        message: 'Erreur de connexion au serveur. Veuillez vérifier votre connexion internet.'
+      });
+    }
+
+    // Handle other errors
+    return Promise.reject(error.response.data);
   }
-};
+);
 
-export const extendSession = async () => {
-  try {
-    const response = await api.post('/auth/refresh');
-    localStorage.setItem('token', response.data.token);
-    return true;
-  } catch (error) {
-    return false;
-  }
-};
-
-export const getServerStats = async () => {
-  try {
-    const response = await api.get('/stats/server');
-    return response.data;
-  } catch (error) {
-    console.error('Error fetching server stats:', error);
-    throw error;
-  }
-};
-
-export const getAdminStats = async () => {
-  try {
-    const response = await api.get('/stats/admin');
-    return response.data;
-  } catch (error) {
-    console.error('Error fetching admin stats:', error);
-    throw error;
-  }
-};
-
-// API modules
-export const deviseAPI = {
-  getAll: () => api.get('/devises'),
-  create: (data) => api.post('/devises', data),
-  update: (id, data) => api.put(`/devises/${id}`, data),
-  delete: (id) => api.delete(`/devises/${id}`),
-};
-
-export const sallesAPI = {
-  getAll: () => api.get('/salles'),
-  getById: (id) => api.get(`/salles/${id}`),
-  getTables: (salleId) => api.get(`/salles/${salleId}/tables`), // Récupérer les tables d'une salle
-  create: (data) => api.post('/salles', data),
-  update: (id, data) => api.put(`/salles/${id}`, data),
-  delete: (id) => api.delete(`/salles/${id}`),
-};
-
-export const tablesAPI = {
-  getAll: () => api.get('/tables'),
-  getById: (id) => api.get(`/tables/${id}`),
-  create: (data) => api.post('/tables', data),
-  update: (id, data) => api.put(`/tables/${id}`, data),
-  delete: (id) => api.delete(`/tables/${id}`),
-};
-
-export const cartemenuAPI = {
-  getBySalle: (salleId) => api.get(`/cartemenu/${salleId}`), // Récupérer la carte menu d'une salle
-};
-
-export const ticketsAPI = {
-  create: (data) => api.post('/tickets', data), // Créer un ticket
-  getById: (id) => api.get(`/tickets/${id}`),
-  update: (id, data) => api.put(`/tickets/${id}`, data),
-  delete: (id) => api.delete(`/tickets/${id}`),
-};
-
-export const commandesAPI = {
-  create: (data) => api.post('/commandes', data), // Créer une commande
-  getByTicket: (ticketId) => api.get(`/commandes?ticket_id=${ticketId}`), // Récupérer les commandes d'un ticket
-  update: (id, data) => api.put(`/commandes/${id}`, data),
-  delete: (id) => api.delete(`/commandes/${id}`),
-};
-
-// Export the axios instance directly
 export default api;

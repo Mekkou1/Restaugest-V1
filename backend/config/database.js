@@ -2,47 +2,56 @@ const { Sequelize } = require('sequelize');
 const path = require('path');
 require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
 
-// Vérification du chargement des variables d'environnement
-if (!process.env.DB_HOST || !process.env.DB_USER || !process.env.DB_NAME || !process.env.DB_PASSWORD) {
-  console.error('❌ Erreur: Les variables d\'environnement de la base de données ne sont pas définies correctement.');
+// Vérification des variables d'environnement
+if (!process.env.DB_HOST || !process.env.DB_USER || !process.env.DB_NAME) {
+  console.error('❌ Variables d\'environnement manquantes pour la base de données');
   process.exit(1);
 }
 
-// Debug: Vérification du chargement des variables d'environnement
-console.log('✅ Configuration de la base de données:', {
+// Configuration de la base de données
+const config = {
   host: process.env.DB_HOST,
-  user: process.env.DB_USER,
+  username: process.env.DB_USER,
+  password: process.env.DB_PASSWORD,
   database: process.env.DB_NAME,
-  password: process.env.DB_PASSWORD ? '***' : 'undefined'
+  dialect: 'mysql',
+  port: process.env.DB_PORT || 3306,
+  logging: false,
+  pool: {
+    max: 10,
+    min: 0,
+    acquire: 30000,
+    idle: 10000
+  },
+  define: {
+    timestamps: true,
+    underscored: true,
+    createdAt: 'created_at',
+    updatedAt: 'updated_at'
+  }
+};
+
+// Log de la configuration (sans le mot de passe)
+console.log('✅ Configuration de la base de données:', {
+  host: config.host,
+  user: config.username,
+  database: config.database,
+  password: '***'
 });
 
 // Création de l'instance Sequelize
 const sequelize = new Sequelize(
-  process.env.DB_NAME,
-  process.env.DB_USER,
-  process.env.DB_PASSWORD,
+  config.database,
+  config.username,
+  config.password,
   {
-    host: process.env.DB_HOST,
-    dialect: 'mysql',
-    logging: false,
-    pool: {
-      max: 10,
-      min: 0,
-      acquire: 30000,
-      idle: 10000
-    }
+    host: config.host,
+    port: config.port,
+    dialect: config.dialect,
+    logging: config.logging,
+    pool: config.pool,
+    define: config.define
   }
 );
-
-// Test de connexion
-(async () => {
-  try {
-    await sequelize.authenticate();
-    console.log('✅ Connexion à la base de données réussie.');
-  } catch (error) {
-    console.error('❌ Erreur de connexion à la base de données:', error.message);
-    process.exit(1);
-  }
-})();
 
 module.exports = sequelize;

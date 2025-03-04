@@ -2,11 +2,10 @@ const express = require('express');
 const cors = require('cors');
 const session = require('express-session');
 const dotenv = require('dotenv');
-const { initSessionCleanup } = require('./middleware/sessionCleanup');
 const WebSocket = require('ws');
 const multer = require('multer');
 const path = require('path');
-
+const { authMiddleware } = require('./middleware/authMiddleware');
 
 // Load environment variables
 dotenv.config();
@@ -34,62 +33,49 @@ app.use(session({
   }
 }));
 
-// Initialize scheduled session cleanup
-initSessionCleanup();
-
 // Middleware to parse JSON
 app.use(express.json());
 
-// WebSocket Server (temps réel)
+// WebSocket Server
 const server = require('http').createServer(app);
 const wss = new WebSocket.Server({ 
   server,
   clientTracking: true
 });
 
-// Broadcast function to all connected clients
-wss.broadcast = function broadcast(data) {
-  wss.clients.forEach(function each(client) {
+// Broadcast function
+wss.broadcast = function(data) {
+  wss.clients.forEach(client => {
     if (client.readyState === WebSocket.OPEN) {
       client.send(JSON.stringify(data));
     }
   });
 };
 
+// WebSocket connection handler
 wss.on('connection', ws => {
-  console.log("✅ Client WebSocket connecté !");
+  console.log('✅ Client WebSocket connecté');
   
   ws.on('message', message => {
     try {
       const parsedMessage = JSON.parse(message);
-      console.log("📩 Message reçu :", parsedMessage);
-      // Broadcast message to all clients
+      console.log('📩 Message reçu:', parsedMessage);
       wss.broadcast(parsedMessage);
     } catch (error) {
-      console.error("Erreur de traitement du message:", error);
+      console.error('Erreur de traitement du message:', error);
     }
   });
 
   ws.on('error', error => {
-    console.error("WebSocket error:", error);
+    console.error('WebSocket error:', error);
   });
 
   ws.on('close', () => {
-    console.log("Client WebSocket déconnecté");
+    console.log('Client WebSocket déconnecté');
   });
 });
 
-// Handle server shutdown gracefully
-process.on('SIGINT', () => {
-  console.log('Shutting down WebSocket server...');
-  wss.clients.forEach(client => client.close());
-  wss.close(() => {
-    process.exit(0);
-  });
-});
-
-
-// Configuration de l'upload des images
+// Configure file uploads
 const storage = multer.diskStorage({
   destination: './uploads/',
   filename: (req, file, cb) => {
@@ -98,7 +84,7 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage: storage });
 
-// Middleware pour servir les fichiers statiques
+// Serve static files
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // Routes
@@ -113,7 +99,6 @@ const ticketsRoutes = require('./routes/tickets');
 const commandesRoutes = require('./routes/commandes');
 const paiementsRoutes = require('./routes/paiements');
 const caissesRoutes = require('./routes/caisses');
-const statistiquesRoutes = require('./routes/statistiques');
 const performancesRoutes = require('./routes/performances');
 const stocksRoutes = require('./routes/stocks');
 const avoirsRoutes = require('./routes/avoirs');
@@ -121,43 +106,46 @@ const famillesRoutes = require('./routes/familles');
 const articlesRoutes = require('./routes/articles');
 const cartemenuRoutes = require('./routes/cartemenu');
 const serveurRoutes = require('./routes/serveur');
-const statsRouter = require('./routes/stats');// Add other routes here
+const statsRouter = require('./routes/stats');
 
-
+// Public routes
 app.use('/api/auth', authRoutes);
-app.use('/api/users', usersRoutes);
-app.use('/api/salles', sallesRoutes);
-app.use('/api/tables', tablesRoutes);
-app.use('/api/plats', platsRoutes);
-app.use('/api/boissons', boissonsRoutes);
-app.use('/api/intrants', intrantsRoutes);
-app.use('/api/tickets', ticketsRoutes);
-app.use('/api/commandes', commandesRoutes);
-app.use('/api/paiements', paiementsRoutes);
-app.use('/api/caisses', caissesRoutes);
-app.use('/api/statistiques', statistiquesRoutes);
-app.use('/api/performances', performancesRoutes);
-app.use('/api/stocks', stocksRoutes);
-app.use('/api/avoirs', avoirsRoutes);
-app.use('/api/familles', famillesRoutes);
-app.use('/api/articles', articlesRoutes);
-app.use('/api/cartemenu', cartemenuRoutes);
-app.use('/api/serveur', serveurRoutes);
-app.use('/api/stats', statsRouter);
 
+// Protected routes
+app.use('/api/users', authMiddleware, usersRoutes);
+app.use('/api/salles', authMiddleware, sallesRoutes);
+app.use('/api/tables', authMiddleware, tablesRoutes);
+app.use('/api/plats', authMiddleware, platsRoutes);
+app.use('/api/boissons', authMiddleware, boissonsRoutes);
+app.use('/api/intrants', authMiddleware, intrantsRoutes);
+app.use('/api/tickets', authMiddleware, ticketsRoutes);
+app.use('/api/commandes', authMiddleware, commandesRoutes);
+app.use('/api/paiements', authMiddleware, paiementsRoutes);
+app.use('/api/caisses', authMiddleware, caissesRoutes);
+app.use('/api/performances', authMiddleware, performancesRoutes);
+app.use('/api/stocks', authMiddleware, stocksRoutes);
+app.use('/api/avoirs', authMiddleware, avoirsRoutes);
+app.use('/api/familles', authMiddleware, famillesRoutes);
+app.use('/api/articles', authMiddleware, articlesRoutes);
+app.use('/api/cartemenu', authMiddleware, cartemenuRoutes);
+app.use('/api/serveur', authMiddleware, serveurRoutes);
+app.use('/api/stats', authMiddleware, statsRouter);
 
 // Error handling middleware
 app.use((err, req, res, next) => {
   console.error(err.stack);
-  res.status(500).json({ message: 'Internal Server Error' });
+  res.status(500).json({ 
+    message: 'Erreur serveur',
+    error: process.env.NODE_ENV === 'development' ? err.message : undefined
+  });
 });
 
 // Start server
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-  console.log(`WebSocket server running on ws://localhost:${PORT}`);
+  console.log(`✅ Serveur démarré sur le port ${PORT}`);
+  console.log(`✅ WebSocket server running on ws://localhost:${PORT}`);
 });
 
-
-module.exports = app;
+// Export WebSocket server
+module.exports = { app, wss };

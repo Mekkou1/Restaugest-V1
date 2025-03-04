@@ -1,107 +1,134 @@
-const { Model, DataTypes, Op } = require('sequelize');
+const { DataTypes } = require('sequelize');
+const sequelize = require('../config/database');
 
-module.exports = (sequelize) => {
-  class Session extends Model {
-    static associate(models) {
-      // Association with Utilisateur model
-      Session.belongsTo(models.Utilisateur, {
-        foreignKey: 'userId',
-        as: 'user'
-      });
+const Session = sequelize.define('Session', {
+  id: {
+    type: DataTypes.INTEGER,
+    primaryKey: true,
+    autoIncrement: true
+  },
+  sessionId: {
+    type: DataTypes.STRING,
+    allowNull: false,
+    unique: true
+  },
+  userId: {
+    type: DataTypes.INTEGER,
+    allowNull: false,
+    references: {
+      model: 'utilisateurs',
+      key: 'id'
     }
-
-    // Create new session and deactivate any existing session
-    static async createSession(userId, token) {
-      const transaction = await sequelize.transaction();
-      
-      try {
-        // Deactivate any existing active session
-        await Session.update(
-          { expiresAt: new Date() },
-          {
-            where: { 
-              userId,
-              expiresAt: { [Op.gt]: new Date() }
-            },
-            transaction
-          }
-        );
-
-        // Create new session
-        const session = await Session.create({
-          userId,
-          refreshToken: token,
-          expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000) // 24 hours
-        }, { transaction });
-
-        await transaction.commit();
-        return session;
-      } catch (error) {
-        await transaction.rollback();
-        throw error;
-      }
-    }
-
-    // Get active session for user
-    static async getActiveSession(userId) {
-      return await Session.findOne({
-        where: {
-          userId,
-          expiresAt: { [Op.gt]: new Date() }
-        }
-      });
-    }
-
-    // Get session history for user
-    static async getSessionHistory(userId) {
-      return await Session.findAll({
-        where: { userId },
-        order: [['expiresAt', 'DESC']]
-      });
-    }
-
-    // End session
-    async endSession() {
-      return await this.update({
-        expiresAt: new Date()
-      });
-    }
+  },
+  refreshToken: {
+    type: DataTypes.STRING,
+    allowNull: false
+  },
+  ipAddress: {
+    type: DataTypes.STRING,
+    allowNull: true
+  },
+  userAgent: {
+    type: DataTypes.STRING,
+    allowNull: true
+  },
+  expiresAt: {
+    type: DataTypes.DATE,
+    allowNull: false
+  },
+  lastActivity: {
+    type: DataTypes.DATE,
+    defaultValue: DataTypes.NOW
   }
-
-  Session.init({
-    sessionId: {
-      type: DataTypes.STRING,
-      primaryKey: true
+}, {
+  tableName: 'sessions',
+  timestamps: true,
+  createdAt: 'created_at',
+  updatedAt: 'updated_at',
+  indexes: [
+    {
+      fields: ['userId']
     },
-    userId: {
-      type: DataTypes.INTEGER,
-      allowNull: false,
-      references: {
-        model: 'Utilisateurs',
-        key: 'id'
-      }
+    {
+      fields: ['sessionId']
     },
-    refreshToken: {
-      type: DataTypes.STRING,
-      allowNull: false
-    },
-    expiresAt: {
-      type: DataTypes.DATE,
-      allowNull: false
+    {
+      fields: ['refreshToken']
     }
-  }, {
-    sequelize,
-    modelName: 'Session',
-    tableName: 'sessions',
-    timestamps: true,
-    paranoid: false,
-    hooks: {
-      beforeCreate: async (session) => {
-        // Generate sessionId
-        session.sessionId = require('crypto').randomBytes(16).toString('hex');
+  ]
+});
+
+// Instance methods
+Session.prototype.isExpired = function() {
+  return new Date() > this.expiresAt;
+};
+
+Session.prototype.updateLastActivity = async function() {
+  this.lastActivity = new Date();
+  await this.save();
+};
+
+Session.prototype.endSession = async function() {
+  this.expiresAt = new Date();
+  await this.save();
+};
+
+// Static methods
+Session.createSession = async function(userId, refreshToken, ipAddress, userAgent) {
+  const expiresAt = new Date();
+  expiresAt.setDate(expiresAt.getDate() + 7); // 7 days from now
+
+  return await this.create({
+    sessionId: require('crypto').randomBytes(32).toString('hex'),
+    userId,
+    refreshToken,
+    ipAddress,
+    userAgent,
+    expiresAt
+  });
+};
+
+Session.getActiveSession = async function(userId) {
+  return await this.findOne({
+    where: {
+      userId,
+      expiresAt: {
+        [Op.gt]: new Date()
       }
     }
   });
-
-  return Session;
 };
+
+Session.endAllUserSessions = async function(userId) {
+  return await this.update(
+    { expiresAt: new Date() },
+    {
+      where: {
+        userId,
+        expiresAt: {
+          [Op.gt]: new Date()
+        }
+      }
+    }
+  );
+};
+
+Session.cleanExpiredSessions = async function() {
+  return await this.destroy({
+    where: {
+      expiresAt: {
+        [Op.lt]: new Date()
+      }
+    }
+  });
+};
+
+// Associations
+Session.associate = function(models) {
+  Session.belongsTo(models.Utilisateur, {
+    foreignKey: 'userId',
+    as: 'user'
+  });
+};
+
+module.exports = Session;

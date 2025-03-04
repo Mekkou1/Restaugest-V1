@@ -2,115 +2,173 @@ const express = require('express');
 const router = express.Router();
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const { Op } = require('sequelize');
 const { Utilisateur, Session } = require('../models');
-
-// Helper function to validate credentials
-async function validateCredentials(pseudo, mot_de_passe) {
-  const user = await Utilisateur.findOne({ where: { pseudo } });
-  if (!user) return null;
-
-  const validPassword = await bcrypt.compare(mot_de_passe, user.mot_de_passe);
-  return validPassword ? user : null;
-}
+const { authMiddleware } = require('../middleware/authMiddleware');
 
 // Login route
 router.post('/login', async (req, res) => {
   try {
     const { pseudo, mot_de_passe } = req.body;
-    const ipAddress = req.ip;
-    const userAgent = req.headers['user-agent'];
-
-    // Validate credentials
-    const user = await validateCredentials(pseudo, mot_de_passe);
+    
+    // Find user
+    const user = await Utilisateur.findOne({ where: { pseudo } });
     if (!user) {
       return res.status(401).json({ message: 'Identifiants invalides' });
     }
 
-    // Check for existing active session
-    const existingSession = await Session.getActiveSession(user.id);
-    if (existingSession) {
-      // End the existing session before creating a new one
-      await existingSession.endSession();
+    // Verify password
+    const validPassword = await bcrypt.compare(mot_de_passe, user.mot_de_passe);
+    if (!validPassword) {
+      return res.status(401).json({ message: 'Identifiants invalides' });
     }
 
+    // Check for existing session and end it
+    await Session.update(
+      { expiresAt: new Date() },
+      { where: { 
+        userId: user.id,
+        expiresAt: { [Op.gt]: new Date() }
+      }}
+    );
 
-    // Generate refresh token first
+    // Create new session
+    const sessionId = require('crypto').randomBytes(32).toString('hex');
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + 7); // 7 days from now
+
     const refreshToken = jwt.sign(
-      { 
-        userId: user.id
-      },
+      { userId: user.id },
       process.env.JWT_REFRESH_SECRET,
       { expiresIn: '7d' }
     );
 
-    // Create new session with the refresh token
-    const session = await Session.createSession(
-      user.id,
+    const session = await Session.create({
+      sessionId,
+      userId: user.id,
       refreshToken,
-      ipAddress,
-      userAgent
-    );
+      expiresAt
+    });
 
-    // Generate access token with session information
-    const accessToken = jwt.sign(
+    // Generate access token
+    const token = jwt.sign(
       { 
-        userId: user.id, 
+        userId: user.id,
         role: user.role,
-        sessionId: session.id 
+        sessionId: session.sessionId
       },
       process.env.JWT_SECRET,
       { expiresIn: '1h' }
     );
 
+    // Update user status
+    await user.update({ etat: 'Connecté' });
 
-
+    // Send response
     res.json({
-      token: accessToken,
+      token,
       refreshToken,
       user: {
         id: user.id,
         pseudo: user.pseudo,
-        role: user.role
-      },
-      sessionId: session.id
+        nom: user.nom,
+        prenom: user.prenom,
+        role: user.role,
+        etat: user.etat
+      }
     });
 
   } catch (error) {
     console.error('Login error:', error);
-    res.status(500).json({ message: 'Erreur de connexion', error: error.message });
+    res.status(500).json({ message: 'Erreur lors de la connexion' });
   }
 });
 
 // Logout route
-router.post('/logout', async (req, res) => {
+router.post('/logout', authMiddleware, async (req, res) => {
   try {
-    const { sessionId } = req.body;
-    const session = await Session.findByPk(sessionId);
+    // End current session
+    await Session.update(
+      { expiresAt: new Date() },
+      { where: { sessionId: req.session.sessionId } }
+    );
 
-    if (!session) {
-      return res.status(404).json({ message: 'Session non trouvée' });
-    }
+    // Update user status
+    await req.user.update({ etat: 'Déconnecté' });
 
-    await session.endSession();
     res.json({ message: 'Déconnexion réussie' });
   } catch (error) {
     console.error('Logout error:', error);
-    res.status(500).json({ message: 'Erreur de déconnexion', error: error.message });
+    res.status(500).json({ message: 'Erreur lors de la déconnexion' });
   }
 });
 
-// Session history route
-router.get('/sessions/:userId', async (req, res) => {
+// Refresh token route
+router.post('/refresh', async (req, res) => {
   try {
-    const { userId } = req.params;
-    const sessions = await Session.getSessionHistory(userId);
-    res.json(sessions);
-  } catch (error) {
-    console.error('Session history error:', error);
-    res.status(500).json({ 
-      message: 'Erreur lors de la récupération de l\'historique des sessions', 
-      error: error.message 
+    const { refreshToken } = req.body;
+    
+    if (!refreshToken) {
+      return res.status(401).json({ message: 'Refresh token non fourni' });
+    }
+
+    // Verify refresh token
+    const decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET);
+    
+    // Find valid session
+    const session = await Session.findOne({
+      where: {
+        userId: decoded.userId,
+        refreshToken,
+        expiresAt: { [Op.gt]: new Date() }
+      }
     });
+
+    if (!session) {
+      return res.status(401).json({ message: 'Session invalide ou expirée' });
+    }
+
+    // Get user
+    const user = await Utilisateur.findByPk(decoded.userId);
+    if (!user) {
+      return res.status(401).json({ message: 'Utilisateur non trouvé' });
+    }
+
+    // Generate new access token
+    const token = jwt.sign(
+      { 
+        userId: user.id,
+        role: user.role,
+        sessionId: session.sessionId
+      },
+      process.env.JWT_SECRET,
+      { expiresIn: '1h' }
+    );
+
+    res.json({ token });
+
+  } catch (error) {
+    console.error('Refresh token error:', error);
+    res.status(401).json({ message: 'Refresh token invalide' });
+  }
+});
+
+// Verify token route
+router.get('/verify', authMiddleware, async (req, res) => {
+  try {
+    res.json({
+      user: {
+        id: req.user.id,
+        pseudo: req.user.pseudo,
+        nom: req.user.nom,
+        prenom: req.user.prenom,
+        role: req.user.role,
+        etat: req.user.etat
+      }
+    });
+  } catch (error) {
+    console.error('Verify token error:', error);
+    res.status(500).json({ message: 'Erreur lors de la vérification du token' });
   }
 });
 

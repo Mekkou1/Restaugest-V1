@@ -1,5 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router';
-import store from '../store';
+import { isAuthenticated, getCurrentUser } from '../utils/auth';
 
 const routes = [
   {
@@ -8,7 +8,7 @@ const routes = [
     component: () => import('../views/HomeVue.vue'),
     meta: { requiresAuth: false },
     beforeEnter: (to, from, next) => {
-      if (store.getters.isAuthenticated) {
+      if (isAuthenticated()) {
         next('/dashboard');
       } else {
         next();
@@ -21,7 +21,7 @@ const routes = [
     component: () => import('../views/LoginVue.vue'),
     meta: { requiresAuth: false },
     beforeEnter: (to, from, next) => {
-      if (store.getters.isAuthenticated) {
+      if (isAuthenticated()) {
         next('/dashboard');
       } else {
         next();
@@ -36,13 +36,13 @@ const routes = [
       {
         path: '',
         redirect: () => {
-          const userRole = store.getters.userRole;
-          switch (userRole) {
+          const user = getCurrentUser();
+          switch (user?.role) {
             case 'Administrateur': return '/dashboard/admin';
             case 'Caissier': return '/dashboard/caisse';
             case 'Serveur': return '/dashboard/serveur';
-            case 'Cuisine': return '/dashboard/cuisine';
-            default: return '/';
+            case 'Cuisinier': return '/dashboard/cuisine';
+            default: return '/login';
           }
         }
       },
@@ -71,6 +71,10 @@ const routes = [
         meta: { requiresAuth: true, role: 'Cuisinier' }
       }
     ]
+  },
+  {
+    path: '/:pathMatch(.*)*',
+    redirect: '/'
   }
 ];
 
@@ -80,25 +84,37 @@ const router = createRouter({
 });
 
 router.beforeEach((to, from, next) => {
+  const requiresAuth = to.matched.some(record => record.meta.requiresAuth);
+  const requiredRole = to.meta.role;
+  const user = getCurrentUser();
+
+  // Log navigation details
   console.group('Navigation');
   console.log('From:', from.path);
   console.log('To:', to.path);
-  console.log('Requires auth:', to.meta.requiresAuth);
-  console.log('Required role:', to.meta.role);
+  console.log('Requires auth:', requiresAuth);
+  console.log('Required role:', requiredRole);
+  console.log('Current user:', user);
   console.groupEnd();
 
-  const isAuthenticated = store.getters.isAuthenticated;
-  const userRole = store.getters.userRole;
-
-  if (to.meta.requiresAuth && !isAuthenticated) {
-    console.log('User not authenticated, redirecting to login');
-    next('/login');
-  } else if (to.meta.role && to.meta.role !== userRole) {
-    console.log('User role does not match required role, redirecting to home');
-    next('/');
-  } else {
-    next();
+  // Handle authentication
+  if (requiresAuth && !isAuthenticated()) {
+    console.log('Authentication required, redirecting to login');
+    next({ 
+      path: '/login', 
+      query: { redirect: to.fullPath }
+    });
+    return;
   }
+
+  // Handle role-based access
+  if (requiredRole && user?.role !== requiredRole) {
+    console.log('Unauthorized role, redirecting to dashboard');
+    next('/dashboard');
+    return;
+  }
+
+  next();
 });
 
 export default router;

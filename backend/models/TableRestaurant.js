@@ -22,7 +22,7 @@ const TableRestaurant = sequelize.define('TableRestaurant', {
 
 // Définir les associations
 TableRestaurant.associate = (models) => {
-  TableRestaurant.belongsTo(models.Salle, { foreignKey: 'salle_id', as: 'Salle' });
+  TableRestaurant.belongsTo(models.Salles, { foreignKey: 'salle_id', as: 'Salle' });
 };
 
 module.exports = TableRestaurant;
