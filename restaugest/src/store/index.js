@@ -1,52 +1,34 @@
 import { createStore } from 'vuex';
 import auth from './modules/auth';
-import caisse from './modules/caisse';
-import serveur from './modules/server';
-import cuisine from './modules/cuisine';
-import stock from './modules/stock';
 import admin from './modules/admin';
-import commandes from './modules/commandes';
-import tables from './modules/tables';
+import caisse from './modules/caisse';
+import cuisine from './modules/cuisine';
+import serveur from './modules/serveur';
 import menu from './modules/menu';
 import utilisateurs from './modules/utilisateurs';
-import stats from './modules/stats';
 
-const store = createStore({
-  modules: {
-    auth,
-    caisse,
-    serveur,
-    cuisine,
-    stock,
-    admin,
-    commandes,
-    tables,
-    menu,
-    utilisateurs,
-    stats
-  },
-
-  // Global state
+export default createStore({
   state: {
     loading: false,
     error: null,
     notifications: [],
     settings: {
       theme: localStorage.getItem('theme') || 'light',
-      language: localStorage.getItem('language') || 'fr'
+      language: localStorage.getItem('language') || 'fr',
+      sidebarCollapsed: localStorage.getItem('sidebarCollapsed') === 'true'
     }
   },
 
-  // Global getters
   getters: {
     isLoading: state => state.loading,
-    hasError: state => state.error !== null,
     getError: state => state.error,
     getNotifications: state => state.notifications,
-    getSettings: state => state.settings
+    getSettings: state => state.settings,
+    getTheme: state => state.settings.theme,
+    getLanguage: state => state.settings.language,
+    isSidebarCollapsed: state => state.settings.sidebarCollapsed
   },
 
-  // Global mutations
   mutations: {
     SET_LOADING(state, loading) {
       state.loading = loading;
@@ -69,20 +51,26 @@ const store = createStore({
     UPDATE_SETTING(state, { key, value }) {
       state.settings[key] = value;
       localStorage.setItem(key, value);
+    },
+    TOGGLE_SIDEBAR(state) {
+      state.settings.sidebarCollapsed = !state.settings.sidebarCollapsed;
+      localStorage.setItem('sidebarCollapsed', state.settings.sidebarCollapsed);
     }
   },
 
-  // Global actions
   actions: {
     setLoading({ commit }, loading) {
       commit('SET_LOADING', loading);
     },
+
     setError({ commit }, error) {
       commit('SET_ERROR', error);
     },
+
     clearError({ commit }) {
       commit('CLEAR_ERROR');
     },
+
     addNotification({ commit }, notification) {
       commit('ADD_NOTIFICATION', notification);
       if (notification.timeout !== false) {
@@ -91,36 +79,51 @@ const store = createStore({
         }, notification.timeout || 5000);
       }
     },
+
     removeNotification({ commit }, id) {
       commit('REMOVE_NOTIFICATION', id);
     },
+
     updateSetting({ commit }, payload) {
       commit('UPDATE_SETTING', payload);
     },
-    initializeStore({ commit, dispatch }) {
-      // Initialize theme
-      const theme = localStorage.getItem('theme') || 'light';
-      document.documentElement.setAttribute('data-theme', theme);
-      commit('UPDATE_SETTING', { key: 'theme', value: theme });
 
-      // Initialize language
-      const language = localStorage.getItem('language') || 'fr';
-      commit('UPDATE_SETTING', { key: 'language', value: language });
+    toggleSidebar({ commit }) {
+      commit('TOGGLE_SIDEBAR');
+    },
 
-      // Check authentication status
-      if (localStorage.getItem('token')) {
-        dispatch('auth/checkAuth');
+    async initializeStore({ commit, dispatch }) {
+      try {
+        // Initialize theme
+        const theme = localStorage.getItem('theme') || 'light';
+        document.documentElement.setAttribute('data-theme', theme);
+        commit('UPDATE_SETTING', { key: 'theme', value: theme });
+
+        // Initialize language
+        const language = localStorage.getItem('language') || 'fr';
+        commit('UPDATE_SETTING', { key: 'language', value: language });
+
+        // Initialize sidebar state
+        const sidebarCollapsed = localStorage.getItem('sidebarCollapsed') === 'true';
+        commit('UPDATE_SETTING', { key: 'sidebarCollapsed', value: sidebarCollapsed });
+
+        // Check authentication status
+        if (localStorage.getItem('token')) {
+          await dispatch('auth/checkAuth');
+        }
+      } catch (error) {
+        console.error('Store initialization error:', error);
       }
     }
+  },
+
+  modules: {
+    auth,
+    admin,
+    caisse,
+    cuisine,
+    serveur,
+    menu,
+    utilisateurs
   }
 });
-
-// Plugin to save certain state to localStorage
-store.subscribe((mutation, state) => {
-  // Save settings when they change
-  if (mutation.type === 'UPDATE_SETTING') {
-    localStorage.setItem('settings', JSON.stringify(state.settings));
-  }
-});
-
-export default store;

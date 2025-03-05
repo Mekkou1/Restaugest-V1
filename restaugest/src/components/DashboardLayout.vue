@@ -1,7 +1,16 @@
 <template>
-  <div class="dashboard-wrapper">
-    <header class="header-admin d-flex justify-content-between align-items-center p-3 bg-dark text-white">
+  <div class="min-h-screen bg-gray-100">
+    <DashboardHeader />
+    <main class="py-6">
+      <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+        <slot></slot>
+      </div>
+    </main>
+    <NotificationWebsocket />
       <div class="d-flex align-items-center">
+        <button class="btn btn-link text-white me-3" @click="toggleSidebar">
+          <i class="fas fa-bars"></i>
+        </button>
         <img src="../assets/Logo.png" alt="Logo" class="logo me-2">
         <div class="user-info">
           <h5 class="mb-0">{{ currentUser?.pseudo }}</h5>
@@ -13,6 +22,39 @@
           <div>{{ currentDate }}</div>
           <div>{{ currentTime }}</div>
         </div>
+        <div class="dropdown me-3">
+          <button class="btn btn-outline-light dropdown-toggle" type="button" id="sessionMenu" data-bs-toggle="dropdown">
+            <i class="fas fa-user-circle"></i>
+          </button>
+          <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="sessionMenu">
+            <li class="dropdown-header">Session</li>
+            <li>
+              <span class="dropdown-item-text">
+                <small>Dernière connexion:</small><br>
+                {{ formatDate(currentUser?.derniere_connexion) }}
+              </span>
+            </li>
+            <li>
+              <span class="dropdown-item-text">
+                <small>IP:</small><br>
+                {{ currentSession?.ip_address }}
+              </span>
+            </li>
+            <li>
+              <span class="dropdown-item-text">
+                <small>Expire le:</small><br>
+                {{ formatDate(currentSession?.expires_at) }}
+              </span>
+            </li>
+            <li><hr class="dropdown-divider"></li>
+            <li>
+              <a class="dropdown-item" href="#" @click.prevent="refreshSession">
+                <i class="fas fa-sync-alt me-2"></i>
+                Prolonger la session
+              </a>
+            </li>
+          </ul>
+        </div>
         <button @click="handleLogout" class="btn btn-outline-light">
           <i class="fas fa-sign-out-alt"></i>
           Déconnexion
@@ -21,7 +63,7 @@
     </header>
 
     <div class="dashboard-container">
-      <aside class="sidebar bg-light p-3">
+      <aside class="sidebar bg-light p-3" :class="{ 'active': sidebarOpen }">
         <nav>
           <ul class="list-unstyled">
             <!-- Menu pour Administrateur -->
@@ -123,7 +165,7 @@
         </nav>
       </aside>
 
-      <main class="main-content p-4">
+      <main class="main-content p-4" :class="{ 'sidebar-open': sidebarOpen }">
         <router-view></router-view>
       </main>
     </div>
@@ -141,6 +183,7 @@ export default {
   setup() {
     const store = useStore();
     const router = useRouter();
+    const sidebarOpen = ref(window.innerWidth >= 768);
     
     // Time management
     const currentDate = ref(new Date().toLocaleDateString());
@@ -149,6 +192,7 @@ export default {
 
     // Computed properties
     const currentUser = computed(() => store.state.auth.user);
+    const currentSession = computed(() => store.state.auth.session);
     const isAdmin = computed(() => currentUser.value?.role === 'Administrateur');
     const isCaissier = computed(() => currentUser.value?.role === 'Caissier');
     const isServeur = computed(() => currentUser.value?.role === 'Serveur');
@@ -169,6 +213,30 @@ export default {
       }
     };
 
+    const toggleSidebar = () => {
+      sidebarOpen.value = !sidebarOpen.value;
+    };
+
+    const formatDate = (date) => {
+      if (!date) return 'Jamais';
+      return new Date(date).toLocaleString();
+    };
+
+    const refreshSession = async () => {
+      try {
+        await store.dispatch('auth/refreshSession');
+      } catch (error) {
+        console.error('Session refresh error:', error);
+      }
+    };
+
+    // Handle window resize
+    const handleResize = () => {
+      if (window.innerWidth >= 768) {
+        sidebarOpen.value = true;
+      }
+    };
+
     // Lifecycle hooks
     onMounted(() => {
       // Start timer
@@ -178,21 +246,30 @@ export default {
       if (!store.getters['auth/isAuthenticated']) {
         router.push('/login');
       }
+
+      // Add resize listener
+      window.addEventListener('resize', handleResize);
     });
 
     onUnmounted(() => {
       if (timer) clearInterval(timer);
+      window.removeEventListener('resize', handleResize);
     });
 
     return {
       currentUser,
+      currentSession,
       currentDate,
       currentTime,
+      sidebarOpen,
       isAdmin,
       isCaissier,
       isServeur,
       isCuisinier,
-      handleLogout
+      handleLogout,
+      toggleSidebar,
+      formatDate,
+      refreshSession
     };
   }
 };
@@ -226,11 +303,18 @@ export default {
   width: 250px;
   min-height: calc(100vh - 64px);
   border-right: 1px solid #dee2e6;
+  transition: all 0.3s ease;
+  position: fixed;
+  top: 64px;
+  bottom: 0;
+  left: 0;
+  z-index: 999;
 }
 
 .main-content {
   flex: 1;
-  overflow-y: auto;
+  margin-left: 250px;
+  transition: margin-left 0.3s ease;
 }
 
 .menu-section {
@@ -264,15 +348,9 @@ export default {
 }
 
 /* Responsive Design */
-@media (max-width: 768px) {
+@media (max-width: 767px) {
   .sidebar {
-    position: fixed;
     left: -250px;
-    top: 64px;
-    bottom: 0;
-    transition: left 0.3s ease;
-    background: white;
-    z-index: 1000;
   }
 
   .sidebar.active {
@@ -281,6 +359,10 @@ export default {
 
   .main-content {
     margin-left: 0;
+  }
+
+  .main-content.sidebar-open {
+    margin-left: 250px;
   }
 }
 
@@ -295,5 +377,17 @@ export default {
 
 .btn-outline-light:hover {
   background-color: rgba(255,255,255,0.1);
+}
+
+.dropdown-menu {
+  min-width: 250px;
+}
+
+.dropdown-item-text {
+  padding: 0.5rem 1rem;
+}
+
+.dropdown-item-text small {
+  color: #6c757d;
 }
 </style>

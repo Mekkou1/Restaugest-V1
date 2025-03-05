@@ -1,57 +1,38 @@
 const { Sequelize } = require('sequelize');
-const path = require('path');
-require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
+require('dotenv').config();
 
-// Vérification des variables d'environnement
-if (!process.env.DB_HOST || !process.env.DB_USER || !process.env.DB_NAME) {
-  console.error('❌ Variables d\'environnement manquantes pour la base de données');
-  process.exit(1);
-}
-
-// Configuration de la base de données
-const config = {
-  host: process.env.DB_HOST,
-  username: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
-  database: process.env.DB_NAME,
-  dialect: 'mysql',
-  port: process.env.DB_PORT || 3306,
-  logging: false,
-  pool: {
-    max: 10,
-    min: 0,
-    acquire: 30000,
-    idle: 10000
-  },
-  define: {
-    timestamps: true,
-    underscored: true,
-    createdAt: 'created_at',
-    updatedAt: 'updated_at'
-  }
-};
-
-// Log de la configuration (sans le mot de passe)
-console.log('✅ Configuration de la base de données:', {
-  host: config.host,
-  user: config.username,
-  database: config.database,
-  password: '***'
-});
-
-// Création de l'instance Sequelize
 const sequelize = new Sequelize(
-  config.database,
-  config.username,
-  config.password,
+  process.env.DB_NAME,
+  process.env.DB_USER,
+  process.env.DB_PASSWORD,
   {
-    host: config.host,
-    port: config.port,
-    dialect: config.dialect,
-    logging: config.logging,
-    pool: config.pool,
-    define: config.define
+    host: process.env.DB_HOST,
+    port: process.env.DB_PORT,
+    dialect: 'mysql',
+    logging: process.env.NODE_ENV === 'development' ? console.log : false,
+    pool: {
+      max: 5,
+      min: 0,
+      acquire: 30000,
+      idle: 10000
+    },
+    define: {
+      timestamps: true,
+      underscored: true,
+      charset: 'utf8',
+      collate: 'utf8_general_ci'
+    },
+    timezone: '+00:00' // Pour gérer correctement les dates
   }
 );
+
+// Test de la connexion
+sequelize.authenticate()
+  .then(() => {
+    console.log('Connexion à la base de données établie avec succès.');
+  })
+  .catch(err => {
+    console.error('Impossible de se connecter à la base de données:', err);
+  });
 
 module.exports = sequelize;

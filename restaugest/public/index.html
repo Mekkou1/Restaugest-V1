@@ -1,17 +1,163 @@
 <!DOCTYPE html>
-<html lang="">
-  <head>
+<html lang="fr">
+<head>
     <meta charset="utf-8">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="viewport" content="width=device-width,initial-scale=1.0">
     <link rel="icon" href="<%= BASE_URL %>favicon.ico">
-    <title><%= htmlWebpackPlugin.options.title %></title>
-  </head>
-  <body>
+    <title>Restaugest - Système de Gestion de Restaurant</title>
+    <meta name="description" content="Système de gestion complet pour restaurants incluant la gestion des commandes, des tables, du personnel et des stocks.">
+    
+    <!-- Preconnect to external resources -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    
+    <!-- Theme Color for mobile browsers -->
+    <meta name="theme-color" content="#ff6600">
+    
+    <!-- PWA Meta Tags -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black">
+    <meta name="apple-mobile-web-app-title" content="Restaugest">
+    
+    <!-- Open Graph Meta Tags -->
+    <meta property="og:title" content="Restaugest">
+    <meta property="og:description" content="Système de gestion complet pour restaurants">
+    <meta property="og:image" content="<%= BASE_URL %>img/icons/android-chrome-512x512.png">
+    <meta property="og:type" content="website">
+    
+    <!-- Twitter Meta Tags -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Restaugest">
+    <meta name="twitter:description" content="Système de gestion complet pour restaurants">
+    <meta name="twitter:image" content="<%= BASE_URL %>img/icons/android-chrome-512x512.png">
+    
+    <!-- Manifest -->
+    <link rel="manifest" href="<%= BASE_URL %>manifest.json">
+    
+    <!-- iOS icons -->
+    <link rel="apple-touch-icon" sizes="180x180" href="<%= BASE_URL %>img/icons/apple-touch-icon.png">
+    
+    <!-- Windows Tiles -->
+    <meta name="msapplication-TileColor" content="#ff6600">
+    <meta name="msapplication-TileImage" content="<%= BASE_URL %>img/icons/mstile-144x144.png">
+    
+    <!-- Prevent auto zooming on mobile devices -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    
+    <!-- Base styles to prevent FOUC -->
+    <style>
+        html, body {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+            background-color: #f4f6f9;
+        }
+        
+        #app {
+            height: 100%;
+        }
+        
+        .app-loading {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            background-color: #ff6600;
+            color: white;
+            z-index: 9999;
+            transition: opacity 0.3s ease-out;
+        }
+        
+        .app-loading.fade-out {
+            opacity: 0;
+        }
+        
+        .app-loading img {
+            width: 120px;
+            height: 120px;
+            margin-bottom: 20px;
+        }
+        
+        .app-loading .spinner {
+            width: 40px;
+            height: 40px;
+            border: 4px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top-color: white;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+        
+        /* Disable pull-to-refresh on mobile */
+        html {
+            overscroll-behavior-y: contain;
+        }
+        
+        /* Hide scrollbar on WebKit browsers */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        
+        ::-webkit-scrollbar-track {
+            background: #f1f1f1;
+        }
+        
+        ::-webkit-scrollbar-thumb {
+            background: #888;
+            border-radius: 4px;
+        }
+        
+        ::-webkit-scrollbar-thumb:hover {
+            background: #555;
+        }
+    </style>
+</head>
+<body>
     <noscript>
-      <strong>We're sorry but <%= htmlWebpackPlugin.options.title %> doesn't work properly without JavaScript enabled. Please enable it to continue.</strong>
+        <strong>Nous sommes désolés mais Restaugest ne fonctionne pas correctement sans JavaScript activé. Veuillez l'activer pour continuer.</strong>
     </noscript>
+    
+    <!-- Loading screen -->
+    <div id="loading" class="app-loading">
+        <img src="<%= BASE_URL %>img/icons/android-chrome-512x512.png" alt="Logo">
+        <div class="spinner"></div>
+    </div>
+    
+    <!-- App root element -->
     <div id="app"></div>
-    <!-- built files will be auto injected -->
-  </body>
+    
+    <!-- Loading screen handler -->
+    <script>
+        window.addEventListener('load', function() {
+            const loading = document.getElementById('loading');
+            if (loading) {
+                loading.classList.add('fade-out');
+                setTimeout(() => {
+                    loading.style.display = 'none';
+                }, 300);
+            }
+        });
+    </script>
+</body>
 </html>

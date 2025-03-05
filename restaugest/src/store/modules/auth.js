@@ -1,159 +1,165 @@
 import api from '../../utils/api';
-import router from '../../router';
-import { login as authLogin, logout as authLogout } from '../../utils/auth';
 
 export default {
   namespaced: true,
 
   state: {
-    token: localStorage.getItem('token') || null,
-    refreshToken: localStorage.getItem('refreshToken') || null,
-    user: JSON.parse(localStorage.getItem('user')) || null,
-    isAuthenticated: !!localStorage.getItem('token'),
+    user: null,
+    session: null,
+    token: localStorage.getItem('token'),
     loading: false,
     error: null
   },
 
   getters: {
-    isAuthenticated: state => state.isAuthenticated,
-    currentUser: state => state.user,
-    userRole: state => state.user?.role,
-    hasError: state => state.error !== null,
+    isAuthenticated: state => !!state.token,
+    getUser: state => state.user,
+    getSession: state => state.session,
     isLoading: state => state.loading,
-    token: state => state.token,
-    refreshToken: state => state.refreshToken
+    getError: state => state.error,
+    isAdmin: state => state.user?.role === 'Administrateur',
+    isCaissier: state => state.user?.role === 'Caissier',
+    isServeur: state => state.user?.role === 'Serveur',
+    isCuisinier: state => state.user?.role === 'Cuisinier'
+  },
+
+  mutations: {
+    SET_USER(state, user) {
+      state.user = user;
+    },
+    SET_SESSION(state, session) {
+      state.session = session;
+    },
+    SET_TOKEN(state, token) {
+      state.token = token;
+      if (token) {
+        localStorage.setItem('token', token);
+      } else {
+        localStorage.removeItem('token');
+      }
+    },
+    SET_LOADING(state, loading) {
+      state.loading = loading;
+    },
+    SET_ERROR(state, error) {
+      state.error = error;
+    },
+    UPDATE_LAST_ACTIVITY(state) {
+      if (state.session) {
+        state.session.last_activity = new Date().toISOString();
+      }
+    }
   },
 
   actions: {
-    async login({ commit }, credentials) {
+    async login({ commit, dispatch }, credentials) {
       commit('SET_LOADING', true);
       commit('SET_ERROR', null);
-
+      
       try {
-        const response = await authLogin(credentials);
-        const { token, refreshToken, user } = response;
-
-        // Store auth data
-        localStorage.setItem('token', token);
-        localStorage.setItem('refreshToken', refreshToken);
-        localStorage.setItem('user', JSON.stringify(user));
-
-        // Update state
-        commit('SET_AUTH_SUCCESS', { token, refreshToken, user });
-
-        // Set default Authorization header
-        api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
-
+        const response = await api.post('/auth/login', credentials);
+        const { token, user, session } = response.data;
+        
+        commit('SET_TOKEN', token);
+        commit('SET_USER', user);
+        commit('SET_SESSION', session);
+        
+        // Start session monitoring
+        dispatch('startSessionMonitoring');
+        
         return user;
       } catch (error) {
-        commit('SET_ERROR', error.message || 'Erreur lors de la connexion');
+        commit('SET_ERROR', error.response?.data?.error || 'Erreur de connexion');
         throw error;
       } finally {
         commit('SET_LOADING', false);
       }
     },
 
-    async logout({ commit }) {
+    async logout({ commit, state }) {
       try {
-        await authLogout();
+        if (state.session?.session_id) {
+          await api.post('/auth/logout', { session_id: state.session.session_id });
+        }
       } catch (error) {
         console.error('Logout error:', error);
+      } finally {
+        commit('SET_TOKEN', null);
+        commit('SET_USER', null);
+        commit('SET_SESSION', null);
       }
-
-      // Clear auth data
-      localStorage.removeItem('token');
-      localStorage.removeItem('refreshToken');
-      localStorage.removeItem('user');
-
-      // Update state
-      commit('CLEAR_AUTH');
-
-      // Remove Authorization header
-      delete api.defaults.headers.common['Authorization'];
-
-      // Redirect to login
-      router.push('/login');
     },
 
-    async refreshToken({ commit, state }) {
+    async refreshSession({ commit, state }) {
       try {
-        const response = await api.post('/api/auth/refresh', {
-          refreshToken: state.refreshToken
+        const response = await api.post('/auth/refresh-session', {
+          session_id: state.session?.session_id
         });
-
-        const { token } = response.data;
-
-        // Update token
-        localStorage.setItem('token', token);
-        commit('SET_TOKEN', token);
-
-        // Update Authorization header
-        api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
-
-        return token;
+        commit('SET_SESSION', response.data.session);
       } catch (error) {
-        commit('CLEAR_AUTH');
+        console.error('Session refresh error:', error);
         throw error;
       }
     },
 
     async checkAuth({ commit, dispatch }) {
+      if (!localStorage.getItem('token')) return;
+
+      commit('SET_LOADING', true);
       try {
-        const response = await api.get('/api/auth/verify');
-        commit('SET_USER', response.data.user);
-        return true;
+        const response = await api.get('/auth/me');
+        const { user, session } = response.data;
+        
+        commit('SET_USER', user);
+        commit('SET_SESSION', session);
+        
+        // Start session monitoring
+        dispatch('startSessionMonitoring');
       } catch (error) {
-        if (error.response?.status === 401) {
-          try {
-            await dispatch('refreshToken');
-            return true;
-          } catch (refreshError) {
-            dispatch('logout');
-            return false;
-          }
-        }
-        return false;
+        commit('SET_TOKEN', null);
+        commit('SET_USER', null);
+        commit('SET_SESSION', null);
+        throw error;
+      } finally {
+        commit('SET_LOADING', false);
       }
     },
 
-    updateUser({ commit }, user) {
-      localStorage.setItem('user', JSON.stringify(user));
-      commit('SET_USER', user);
-    }
-  },
+    startSessionMonitoring({ dispatch, state }) {
+      // Update last activity every minute
+      setInterval(() => {
+        if (state.session) {
+          dispatch('updateLastActivity');
+        }
+      }, 60000);
 
-  mutations: {
-    SET_AUTH_SUCCESS(state, { token, refreshToken, user }) {
-      state.token = token;
-      state.refreshToken = refreshToken;
-      state.user = user;
-      state.isAuthenticated = true;
-      state.error = null;
+      // Check session expiration every minute
+      setInterval(() => {
+        if (state.session) {
+          const expiresAt = new Date(state.session.expires_at);
+          const now = new Date();
+          
+          // If session expires in less than 5 minutes, try to refresh
+          if ((expiresAt - now) < 300000) {
+            dispatch('refreshSession');
+          }
+        }
+      }, 60000);
     },
 
-    SET_TOKEN(state, token) {
-      state.token = token;
+    async updateLastActivity({ commit, state }) {
+      try {
+        await api.post('/auth/activity', {
+          session_id: state.session?.session_id
+        });
+        commit('UPDATE_LAST_ACTIVITY');
+      } catch (error) {
+        console.error('Update activity error:', error);
+      }
     },
 
-    SET_USER(state, user) {
-      state.user = user;
-      state.isAuthenticated = true;
-    },
-
-    SET_LOADING(state, loading) {
-      state.loading = loading;
-    },
-
-    SET_ERROR(state, error) {
-      state.error = error;
-    },
-
-    CLEAR_AUTH(state) {
-      state.token = null;
-      state.refreshToken = null;
-      state.user = null;
-      state.isAuthenticated = false;
-      state.error = null;
+    clearError({ commit }) {
+      commit('SET_ERROR', null);
     }
   }
 };

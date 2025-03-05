@@ -1,0 +1,31 @@
+# Browsers that we support
+
+# Desktop browsers
+last 2 Chrome versions
+last 2 Firefox versions
+last 2 Safari versions
+last 2 Edge versions
+last 2 Opera versions
+
+# Mobile browsers
+last 2 iOS major versions
+last 2 Android major versions
+last 2 ChromeAndroid versions
+last 2 FirefoxAndroid versions
+
+# Market share
+> 0.5%
+not dead
+
+# Specific features support
+supports es6-module
+supports flexbox
+supports grid
+supports css-variables
+
+# Exclude old browsers
+not IE 11
+not op_mini all
+
+# PWA support
+maintained node versions

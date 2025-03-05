@@ -20,10 +20,28 @@
           <ul class="list-unstyled">
             <!-- Gestion des comptes -->
             <li class="mb-2" @click="toggleGroup('comptes')">
-              <strong>Gestion des comptes</strong>
+              <strong>
+                <i class="fas fa-users-cog me-2"></i>
+                Gestion des comptes
+              </strong>
             </li>
             <ul v-if="menuOuvert.comptes" class="list-unstyled ms-3">
-              <li class="mb-3" @click="afficherSection('GestionUtilisateurs')">Utilisateurs</li>
+              <li 
+                class="mb-3 menu-item" 
+                :class="{ 'active': sectionActive === 'GestionUtilisateurs' }"
+                @click="afficherSection('GestionUtilisateurs')"
+              >
+                <i class="fas fa-users me-2"></i>
+                Utilisateurs
+              </li>
+              <li 
+                class="mb-3 menu-item" 
+                :class="{ 'active': sectionActive === 'SessionsActives' }"
+                @click="afficherSection('SessionsActives')"
+              >
+                <i class="fas fa-clock me-2"></i>
+                Sessions actives
+              </li>
             </ul>
 
              <!-- Gestion des tables -->
@@ -45,7 +63,7 @@
               <li class="mb-3" @click="afficherSection('GestionPlats')">Plats</li>
               <li class="mb-3" @click="afficherSection('GestionBoissons')">Boissons</li>
               <li class="mb-3" @click="afficherSection('GestionIntrants')">Intrants</li>
-              <li class="mb-3" @click="afficherSection('GestionPrix')">Prix</li>
+              <li class="mb-3" @click="afficherSection('cartemenu')">Cartes Menu</li>
             </ul>
 
             <!-- Gestion des stocks -->

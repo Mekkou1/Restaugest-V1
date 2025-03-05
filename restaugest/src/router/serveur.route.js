@@ -1,30 +1,50 @@
-export default {
+export default [
+  {
     path: 'serveur',
-    name: 'serveur',
-    component: () => import('../views/serveur/ServeurVue.vue'),
-    meta: { 
-      requiresAuth: true, 
-      role: 'Serveur',
-      title: 'Interface Serveur',
-      saveState: true
+    name: 'ServeurDashboard',
+    component: () => import('@/views/serveur/ServeurDashboard.vue'),
+    meta: {
+      requiresAuth: true,
+      role: 'Serveur'
     },
     children: [
       {
-        path: 'commandes',
-        name: 'serveur-commandes',
-        component: () => import('../components/serveur/CommandeEnhanced.vue'),
-        meta: {
-          title: 'Prise de commandes'
-        }
+        path: 'tables',
+        name: 'TableStatus',
+        component: () => import('@/views/serveur/TableStatus.vue')
       },
       {
-        path: 'encours',
-        name: 'serveur-encours',
-        component: () => import('../views/serveur/CommandesEnCours.vue'),
-        meta: {
-          title: 'Commandes en cours'
-        }
+        path: 'commandes',
+        name: 'GestionCommandes',
+        component: () => import('@/views/serveur/GestionCommandes.vue')
+      },
+      {
+        path: 'commandes/nouvelle',
+        name: 'NouvelleCommande',
+        component: () => import('@/views/serveur/FormulaireCommande.vue')
+      },
+      {
+        path: 'commandes/:id',
+        name: 'DetailCommande',
+        component: () => import('@/views/serveur/DetailCommande.vue'),
+        props: true
+      },
+      {
+        path: 'tables/:id',
+        name: 'DetailTable',
+        component: () => import('@/views/serveur/DetailTable.vue'),
+        props: true
+      },
+      {
+        path: 'service',
+        name: 'ServiceStatus',
+        component: () => import('@/views/serveur/ServiceStatus.vue')
+      },
+      {
+        path: 'notifications',
+        name: 'NotificationsServeur',
+        component: () => import('@/views/serveur/Notifications.vue')
       }
     ]
-  };
-  
+  }
+];

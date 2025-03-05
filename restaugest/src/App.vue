@@ -1,75 +1,138 @@
 <template>
   <div id="app">
-    <div v-if="loading" class="loading-overlay">
+    <router-view></router-view>
+
+    <!-- Session Expiration Alert -->
+    <div 
+      class="session-alert" 
+      :class="{ 'show': showSessionAlert }"
+      v-if="isAuthenticated"
+    >
+      <div class="alert alert-warning" role="alert">
+        <i class="fas fa-clock me-2"></i>
+        Votre session expire bientôt
+        <button 
+          class="btn btn-sm btn-warning ms-3"
+          @click="refreshSession"
+          :disabled="refreshing"
+        >
+          <span v-if="refreshing" class="spinner-border spinner-border-sm me-1"></span>
+          Prolonger la session
+        </button>
+      </div>
+    </div>
+
+    <!-- Global Loading Overlay -->
+    <div class="loading-overlay" v-if="loading">
       <div class="spinner-border text-primary" role="status">
         <span class="visually-hidden">Chargement...</span>
       </div>
     </div>
-    <router-view v-else />
   </div>
 </template>
 
 <script>
-import { setupAuthInterceptor } from './utils/auth';
-import { mapState, mapActions } from 'vuex';
+import { ref, computed, onMounted, onUnmounted } from 'vue';
+import { useStore } from 'vuex';
+import { useRouter } from 'vue-router';
+import sessionManager from './utils/session';
 
 export default {
   name: 'App',
-  
-  data() {
-    return {
-      loading: true
+
+  setup() {
+    const store = useStore();
+    const router = useRouter();
+    const showSessionAlert = ref(false);
+    const refreshing = ref(false);
+
+    const isAuthenticated = computed(() => store.getters['auth/isAuthenticated']);
+    const loading = computed(() => store.state.loading);
+
+    // Check session status periodically
+    const checkSessionStatus = () => {
+      if (isAuthenticated.value && sessionManager.isAboutToExpire()) {
+        showSessionAlert.value = true;
+      } else {
+        showSessionAlert.value = false;
+      }
     };
-  },
 
-  computed: {
-    ...mapState({
-      isAuthenticated: state => state.auth.isAuthenticated,
-      user: state => state.auth.user
-    })
-  },
-
-  methods: {
-    ...mapActions(['checkAuth']),
-
-    async initializeApp() {
+    // Refresh session
+    const refreshSession = async () => {
+      refreshing.value = true;
       try {
-        // Setup API interceptors
-        setupAuthInterceptor();
-        
-        // Check authentication status
-        await this.checkAuth();
+        await store.dispatch('auth/refreshSession');
+        showSessionAlert.value = false;
       } catch (error) {
-        console.error('Error initializing app:', error);
+        console.error('Session refresh failed:', error);
+        // If refresh fails, redirect to login
+        router.push({ 
+          name: 'Login',
+          query: { redirect: router.currentRoute.value.fullPath }
+        });
       } finally {
-        this.loading = false;
+        refreshing.value = false;
       }
-    }
-  },
+    };
 
-  created() {
-    this.initializeApp();
-  },
-
-  mounted() {
-    // Listen for authentication events
-    window.addEventListener('storage', (e) => {
-      if (e.key === 'token' && !e.newValue) {
-        // Token was removed in another tab
-        this.$router.push('/login');
+    // Initialize session monitoring
+    onMounted(async () => {
+      // Check authentication status
+      if (localStorage.getItem('token')) {
+        try {
+          await store.dispatch('auth/checkAuth');
+        } catch (error) {
+          console.error('Auth check failed:', error);
+        }
       }
+
+      // Start session monitoring if authenticated
+      if (isAuthenticated.value) {
+        sessionManager.startMonitoring();
+      }
+
+      // Start session status check interval
+      const interval = setInterval(checkSessionStatus, 60000); // Check every minute
+
+      // Cleanup on unmount
+      onUnmounted(() => {
+        clearInterval(interval);
+        sessionManager.stopMonitoring();
+      });
     });
+
+    return {
+      isAuthenticated,
+      loading,
+      showSessionAlert,
+      refreshing,
+      refreshSession
+    };
   }
 };
 </script>
 
 <style>
 #app {
-  width: 100%;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
   min-height: 100vh;
-  margin: 0;
-  padding: 0;
-  font-family: Arial, sans-serif;
+}
+
+.session-alert {
+  position: fixed;
+  bottom: -100px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1050;
+  transition: bottom 0.3s ease-in-out;
+  min-width: 300px;
+}
+
+.session-alert.show {
+  bottom: 20px;
 }
 
 .loading-overlay {
@@ -85,212 +148,69 @@ export default {
   z-index: 9999;
 }
 
-/* Réinitialisation CSS de base */
-* {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
+.loading-overlay .spinner-border {
+  width: 3rem;
+  height: 3rem;
 }
 
-/* Variables CSS globales */
-:root {
-  --primary-color: #ff6600;
-  --secondary-color: #333;
-  --background-color: #f5f5f5;
-  --text-color: #333;
-  --border-color: #ddd;
-  --success-color: #28a745;
-  --danger-color: #dc3545;
-  --warning-color: #ffc107;
-  --info-color: #17a2b8;
-}
-
-/* Styles de base */
-body {
-  background-color: var(--background-color);
-  color: var(--text-color);
-  line-height: 1.6;
-}
-
-/* Styles des boutons */
-.btn {
-  cursor: pointer;
-  padding: 0.5rem 1rem;
-  border-radius: 4px;
-  border: none;
-  font-weight: 600;
-  transition: all 0.3s ease;
-}
-
+/* Global styles */
 .btn-primary {
-  background-color: var(--primary-color);
+  background-color: #ff6600;
+  border-color: #ff6600;
+}
+
+.btn-primary:hover,
+.btn-primary:focus {
+  background-color: #ff8533;
+  border-color: #ff8533;
+}
+
+.btn-outline-primary {
+  color: #ff6600;
+  border-color: #ff6600;
+}
+
+.btn-outline-primary:hover,
+.btn-outline-primary:focus {
+  background-color: #ff6600;
+  border-color: #ff6600;
+}
+
+.text-primary {
+  color: #ff6600 !important;
+}
+
+.bg-primary {
+  background-color: #ff6600 !important;
+}
+
+/* Form styles */
+.form-control:focus,
+.form-select:focus {
+  border-color: #ff6600;
+  box-shadow: 0 0 0 0.2rem rgba(255, 102, 0, 0.25);
+}
+
+/* Table styles */
+.table th {
+  background-color: #343a40;
   color: white;
 }
 
-.btn-primary:hover {
-  background-color: darken(var(--primary-color), 10%);
-}
-
-/* Styles des formulaires */
-.form-control {
-  width: 100%;
-  padding: 0.5rem;
-  border: 1px solid var(--border-color);
-  border-radius: 4px;
-  margin-bottom: 1rem;
-}
-
-.form-control:focus {
-  outline: none;
-  border-color: var(--primary-color);
-  box-shadow: 0 0 0 2px rgba(255, 102, 0, 0.2);
-}
-
-/* Styles des cartes */
+/* Card styles */
 .card {
-  background: white;
-  border-radius: 8px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-  padding: 1rem;
-  margin-bottom: 1rem;
+  border: none;
+  box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
 }
 
-/* Styles des alertes */
-.alert {
-  padding: 1rem;
-  border-radius: 4px;
-  margin-bottom: 1rem;
+.card-header {
+  background-color: #f8f9fa;
+  border-bottom: 1px solid #dee2e6;
 }
 
-.alert-success {
-  background-color: var(--success-color);
-  color: white;
-}
-
-.alert-danger {
-  background-color: var(--danger-color);
-  color: white;
-}
-
-/* Styles des tableaux */
-table {
-  width: 100%;
-  border-collapse: collapse;
-  margin-bottom: 1rem;
-}
-
-th, td {
-  padding: 0.75rem;
-  border-bottom: 1px solid var(--border-color);
-  text-align: left;
-}
-
-th {
-  background-color: var(--background-color);
-  font-weight: 600;
-}
-
-/* Styles des icônes */
-.icon {
-  width: 1.5rem;
-  height: 1.5rem;
-  vertical-align: middle;
-}
-
-/* Styles des badges */
+/* Badge styles */
 .badge {
-  padding: 0.25rem 0.5rem;
-  border-radius: 999px;
-  font-size: 0.75rem;
-  font-weight: 600;
-}
-
-/* Styles des tooltips */
-.tooltip {
-  position: relative;
-  display: inline-block;
-}
-
-.tooltip .tooltip-text {
-  visibility: hidden;
-  background-color: var(--secondary-color);
-  color: white;
-  text-align: center;
-  padding: 5px;
-  border-radius: 4px;
-  position: absolute;
-  z-index: 1;
-  bottom: 125%;
-  left: 50%;
-  transform: translateX(-50%);
-  opacity: 0;
-  transition: opacity 0.3s;
-}
-
-.tooltip:hover .tooltip-text {
-  visibility: visible;
-  opacity: 1;
-}
-
-/* Styles des modales */
-.modal {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background-color: rgba(0, 0, 0, 0.5);
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  z-index: 1000;
-}
-
-.modal-content {
-  background: white;
-  padding: 1.5rem;
-  border-radius: 8px;
-  max-width: 500px;
-  width: 90%;
-}
-
-/* Styles des spinners */
-.spinner-border {
-  display: inline-block;
-  width: 2rem;
-  height: 2rem;
-  border: 0.25rem solid currentColor;
-  border-right-color: transparent;
-  border-radius: 50%;
-  animation: spinner-border 0.75s linear infinite;
-}
-
-@keyframes spinner-border {
-  to { transform: rotate(360deg); }
-}
-
-/* Styles des transitions */
-.fade-enter-active, .fade-leave-active {
-  transition: opacity 0.3s;
-}
-
-.fade-enter-from, .fade-leave-to {
-  opacity: 0;
-}
-
-/* Styles responsive */
-@media (max-width: 768px) {
-  .container {
-    padding: 0 1rem;
-  }
-  
-  .card {
-    padding: 0.75rem;
-  }
-  
-  table {
-    display: block;
-    overflow-x: auto;
-  }
+  font-weight: 500;
+  padding: 0.5em 0.7em;
 }
 </style>

@@ -1,120 +1,79 @@
-import { createRouter, createWebHistory } from 'vue-router';
-import { isAuthenticated, getCurrentUser } from '../utils/auth';
-
-const routes = [
-  {
-    path: '/',
-    name: 'home',
-    component: () => import('../views/HomeVue.vue'),
-    meta: { requiresAuth: false },
-    beforeEnter: (to, from, next) => {
-      if (isAuthenticated()) {
-        next('/dashboard');
-      } else {
-        next();
-      }
-    }
-  },
-  {
-    path: '/login',
-    name: 'login',
-    component: () => import('../views/LoginVue.vue'),
-    meta: { requiresAuth: false },
-    beforeEnter: (to, from, next) => {
-      if (isAuthenticated()) {
-        next('/dashboard');
-      } else {
-        next();
-      }
-    }
-  },
-  {
-    path: '/dashboard',
-    component: () => import('../components/DashboardLayout.vue'),
-    meta: { requiresAuth: true },
-    children: [
-      {
-        path: '',
-        redirect: () => {
-          const user = getCurrentUser();
-          switch (user?.role) {
-            case 'Administrateur': return '/dashboard/admin';
-            case 'Caissier': return '/dashboard/caisse';
-            case 'Serveur': return '/dashboard/serveur';
-            case 'Cuisinier': return '/dashboard/cuisine';
-            default: return '/login';
-          }
-        }
-      },
-      {
-        path: 'admin',
-        name: 'admin',
-        component: () => import('../views/admin/AdminVue.vue'),
-        meta: { requiresAuth: true, role: 'Administrateur' }
-      },
-      {
-        path: 'caisse',
-        name: 'caisse',
-        component: () => import('../views/caisse/CaisseVue.vue'),
-        meta: { requiresAuth: true, role: 'Caissier' }
-      },
-      {
-        path: 'serveur',
-        name: 'serveur',
-        component: () => import('../views/serveur/ServeurVue.vue'),
-        meta: { requiresAuth: true, role: 'Serveur' }
-      },
-      {
-        path: 'cuisine',
-        name: 'cuisine',
-        component: () => import('../views/cuisine/CuisineVue.vue'),
-        meta: { requiresAuth: true, role: 'Cuisinier' }
-      }
-    ]
-  },
-  {
-    path: '/:pathMatch(.*)*',
-    redirect: '/'
-  }
-];
+import { createRouter, createWebHistory } from 'vue-router'
+import store from '../store'
+import routes from './routes'
 
 const router = createRouter({
-  history: createWebHistory(),
+  history: createWebHistory(process.env.BASE_URL),
   routes
-});
+})
 
-router.beforeEach((to, from, next) => {
-  const requiresAuth = to.matched.some(record => record.meta.requiresAuth);
-  const requiredRole = to.meta.role;
-  const user = getCurrentUser();
+// Navigation Guards
+router.beforeEach(async (to, from, next) => {
+  // Check if route requires authentication
+  const requiresAuth = to.matched.some(record => record.meta.requiresAuth)
+  const requiresGuest = to.matched.some(record => record.meta.requiresGuest)
+  const requiredRole = to.matched.find(record => record.meta.role)?.meta.role
 
-  // Log navigation details
-  console.group('Navigation');
-  console.log('From:', from.path);
-  console.log('To:', to.path);
-  console.log('Requires auth:', requiresAuth);
-  console.log('Required role:', requiredRole);
-  console.log('Current user:', user);
-  console.groupEnd();
+  // Get current auth state
+  const isAuthenticated = store.getters['auth/isAuthenticated']
+  const currentUser = store.getters['auth/getUser']
 
-  // Handle authentication
-  if (requiresAuth && !isAuthenticated()) {
-    console.log('Authentication required, redirecting to login');
+  try {
+    // If not authenticated but has token, try to restore session
+    if (!isAuthenticated && localStorage.getItem('token')) {
+      await store.dispatch('auth/checkAuth')
+    }
+
+    // Handle authentication requirements
+    if (requiresAuth) {
+      if (!isAuthenticated) {
+        // Redirect to login if not authenticated
+        return next({ 
+          name: 'Login',
+          query: { redirect: to.fullPath }
+        })
+      }
+
+      // Check role requirements
+      if (requiredRole && currentUser.role !== requiredRole) {
+        // Redirect to home if wrong role
+        return next({ name: 'Home' })
+      }
+    }
+
+    // Handle guest-only routes (like login)
+    if (requiresGuest && isAuthenticated) {
+      return next({ name: 'Home' })
+    }
+
+    // If all checks pass, proceed
+    next()
+  } catch (error) {
+    console.error('Navigation guard error:', error)
+    // Clear auth state if error occurs
+    await store.dispatch('auth/logout')
     next({ 
-      path: '/login', 
+      name: 'Login',
       query: { redirect: to.fullPath }
-    });
-    return;
+    })
   }
+})
 
-  // Handle role-based access
-  if (requiredRole && user?.role !== requiredRole) {
-    console.log('Unauthorized role, redirecting to dashboard');
-    next('/dashboard');
-    return;
+// After navigation complete
+router.afterEach((to) => {
+  // Update document title
+  document.title = `${to.name} - Restaugest` || 'Restaugest'
+
+  // Log navigation for analytics
+  if (process.env.NODE_ENV === 'production') {
+    // Implement analytics logging here
   }
+})
 
-  next();
-});
+// Handle navigation errors
+router.onError((error) => {
+  console.error('Navigation error:', error)
+  router.push({ name: 'NotFound' })
+})
 
-export default router;
+export default router

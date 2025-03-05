@@ -1,151 +1,130 @@
 const express = require('express');
 const cors = require('cors');
-const session = require('express-session');
-const dotenv = require('dotenv');
-const WebSocket = require('ws');
-const multer = require('multer');
+const http = require('http');
+const socketIo = require('socket.io');
 const path = require('path');
+require('dotenv').config();
+
+// Import des middlewares
+const { errorHandler } = require('./middleware/errorHandler');
 const { authMiddleware } = require('./middleware/authMiddleware');
+const { sessionCleanup } = require('./middleware/sessionCleanup');
 
-// Load environment variables
-dotenv.config();
+// Import des routes
+const authRoutes = require('./routes/auth');
+const utilisateursRoutes = require('./routes/utilisateurs');
+const etablissementRoutes = require('./routes/etablissement');
+const menuRoutes = require('./routes/menu-new');
+const commandesRoutes = require('./routes/commandes');
+const preparationsRoutes = require('./routes/preparations');
+const recettesRoutes = require('./routes/recettes');
+const intrantsRoutes = require('./routes/intrants');
+const paiementsRoutes = require('./routes/paiements-new');
+const devisesRoutes = require('./routes/devises');
+const transfertsRoutes = require('./routes/transferts');
+const sessionsCaisseRoutes = require('./routes/sessions-caisse');
+const statsRoutes = require('./routes/stats-new');
+const tablesRoutes = require('./routes/tables');
+const sallesRoutes = require('./routes/salles');
 
-// Create express app
+// Configuration WebSocket
+const { configureWebSocket } = require('./config/websocket');
+
+// Création de l'application Express
 const app = express();
+const server = http.createServer(app);
 
-// Configure CORS
+// Configuration CORS
 app.use(cors({
-  origin: process.env.CLIENT_URL || 'http://localhost:8080',
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
+  origin: process.env.CORS_ORIGIN || 'http://localhost:8080',
+  credentials: true
 }));
 
-// Configure session
-app.use(session({
-  secret: process.env.SESSION_SECRET || 'your-secret-key',
-  resave: false,
-  saveUninitialized: false,
-  cookie: {
-    secure: process.env.NODE_ENV === 'production',
-    httpOnly: true,
-    maxAge: 24 * 60 * 60 * 1000 // 24 hours
-  }
-}));
-
-// Middleware to parse JSON
+// Configuration des middlewares
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
-// WebSocket Server
-const server = require('http').createServer(app);
-const wss = new WebSocket.Server({ 
-  server,
-  clientTracking: true
-});
-
-// Broadcast function
-wss.broadcast = function(data) {
-  wss.clients.forEach(client => {
-    if (client.readyState === WebSocket.OPEN) {
-      client.send(JSON.stringify(data));
-    }
-  });
-};
-
-// WebSocket connection handler
-wss.on('connection', ws => {
-  console.log('✅ Client WebSocket connecté');
-  
-  ws.on('message', message => {
-    try {
-      const parsedMessage = JSON.parse(message);
-      console.log('📩 Message reçu:', parsedMessage);
-      wss.broadcast(parsedMessage);
-    } catch (error) {
-      console.error('Erreur de traitement du message:', error);
-    }
-  });
-
-  ws.on('error', error => {
-    console.error('WebSocket error:', error);
-  });
-
-  ws.on('close', () => {
-    console.log('Client WebSocket déconnecté');
-  });
-});
-
-// Configure file uploads
-const storage = multer.diskStorage({
-  destination: './uploads/',
-  filename: (req, file, cb) => {
-    cb(null, file.fieldname + '_' + Date.now() + path.extname(file.originalname));
-  },
-});
-const upload = multer({ storage: storage });
-
-// Serve static files
+// Configuration des fichiers statiques
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
-// Routes
-const authRoutes = require('./routes/auth');
-const usersRoutes = require('./routes/utilisateurs');
-const sallesRoutes = require('./routes/salles');
-const tablesRoutes = require('./routes/tables');
-const platsRoutes = require('./routes/plats');
-const boissonsRoutes = require('./routes/boissons');
-const intrantsRoutes = require('./routes/intrants');
-const ticketsRoutes = require('./routes/tickets');
-const commandesRoutes = require('./routes/commandes');
-const paiementsRoutes = require('./routes/paiements');
-const caissesRoutes = require('./routes/caisses');
-const performancesRoutes = require('./routes/performances');
-const stocksRoutes = require('./routes/stocks');
-const avoirsRoutes = require('./routes/avoirs');
-const famillesRoutes = require('./routes/familles');
-const articlesRoutes = require('./routes/articles');
-const cartemenuRoutes = require('./routes/cartemenu');
-const serveurRoutes = require('./routes/serveur');
-const statsRouter = require('./routes/stats');
+// Configuration WebSocket
+const io = socketIo(server, {
+  cors: {
+    origin: process.env.CORS_ORIGIN || 'http://localhost:8080',
+    methods: ['GET', 'POST'],
+    credentials: true
+  }
+});
+configureWebSocket(io);
 
-// Public routes
+// Middleware pour ajouter io aux requêtes
+app.use((req, res, next) => {
+  req.io = io;
+  next();
+});
+
+// Routes publiques
 app.use('/api/auth', authRoutes);
 
-// Protected routes
-app.use('/api/users', authMiddleware, usersRoutes);
-app.use('/api/salles', authMiddleware, sallesRoutes);
-app.use('/api/tables', authMiddleware, tablesRoutes);
-app.use('/api/plats', authMiddleware, platsRoutes);
-app.use('/api/boissons', authMiddleware, boissonsRoutes);
-app.use('/api/intrants', authMiddleware, intrantsRoutes);
-app.use('/api/tickets', authMiddleware, ticketsRoutes);
+// Routes protégées
+app.use('/api/utilisateurs', authMiddleware, utilisateursRoutes);
+app.use('/api/etablissement', authMiddleware, etablissementRoutes);
+app.use('/api/menu', authMiddleware, menuRoutes);
 app.use('/api/commandes', authMiddleware, commandesRoutes);
+app.use('/api/preparations', authMiddleware, preparationsRoutes);
+app.use('/api/recettes', authMiddleware, recettesRoutes);
+app.use('/api/intrants', authMiddleware, intrantsRoutes);
 app.use('/api/paiements', authMiddleware, paiementsRoutes);
-app.use('/api/caisses', authMiddleware, caissesRoutes);
-app.use('/api/performances', authMiddleware, performancesRoutes);
-app.use('/api/stocks', authMiddleware, stocksRoutes);
-app.use('/api/avoirs', authMiddleware, avoirsRoutes);
-app.use('/api/familles', authMiddleware, famillesRoutes);
-app.use('/api/articles', authMiddleware, articlesRoutes);
-app.use('/api/cartemenu', authMiddleware, cartemenuRoutes);
-app.use('/api/serveur', authMiddleware, serveurRoutes);
-app.use('/api/stats', authMiddleware, statsRouter);
+app.use('/api/devises', authMiddleware, devisesRoutes);
+app.use('/api/transferts', authMiddleware, transfertsRoutes);
+app.use('/api/sessions-caisse', authMiddleware, sessionsCaisseRoutes);
+app.use('/api/stats', authMiddleware, statsRoutes);
+app.use('/api/tables', authMiddleware, tablesRoutes);
+app.use('/api/salles', authMiddleware, sallesRoutes);
 
-// Error handling middleware
-app.use((err, req, res, next) => {
-  console.error(err.stack);
-  res.status(500).json({ 
-    message: 'Erreur serveur',
-    error: process.env.NODE_ENV === 'development' ? err.message : undefined
+// Middleware de nettoyage des sessions
+app.use(sessionCleanup);
+
+// Middleware de gestion des erreurs
+app.use(errorHandler);
+
+// Route par défaut
+app.get('/', (req, res) => {
+  res.json({
+    message: 'Bienvenue sur l\'API Restaugest',
+    version: process.env.npm_package_version || '1.0.0',
+    documentation: '/api/docs'
   });
 });
 
-// Start server
-const PORT = process.env.PORT || 5000;
-server.listen(PORT, () => {
-  console.log(`✅ Serveur démarré sur le port ${PORT}`);
-  console.log(`✅ WebSocket server running on ws://localhost:${PORT}`);
+// Gestion des routes non trouvées
+app.use((req, res) => {
+  res.status(404).json({
+    status: 'error',
+    message: 'Route non trouvée'
+  });
 });
 
-// Export WebSocket server
-module.exports = { app, wss };
+// Configuration du port
+const PORT = process.env.PORT || 3000;
+
+// Démarrage du serveur
+server.listen(PORT, () => {
+  console.log(`Serveur démarré sur le port ${PORT}`);
+  console.log(`Documentation disponible sur http://localhost:${PORT}/api/docs`);
+  console.log(`Interface d'administration sur http://localhost:${PORT}/admin`);
+  console.log('Mode:', process.env.NODE_ENV || 'development');
+});
+
+// Gestion des erreurs non capturées
+process.on('uncaughtException', (error) => {
+  console.error('Erreur non capturée:', error);
+  process.exit(1);
+});
+
+process.on('unhandledRejection', (error) => {
+  console.error('Promesse rejetée non gérée:', error);
+  process.exit(1);
+});
+
+module.exports = { app, server };

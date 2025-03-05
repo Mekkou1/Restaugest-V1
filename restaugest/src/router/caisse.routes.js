@@ -1,134 +1,58 @@
-import CaisseView from '@/views/caisse/CaisseView.vue';
-
 export default [
   {
-    path: '/caisse',
-    name: 'caisse',
-    component: CaisseView,
+    path: 'caisse',
+    name: 'CaisseDashboard',
+    component: () => import('@/views/caisse/CaisseDashboard.vue'),
     meta: {
       requiresAuth: true,
-      roles: ['ADMIN', 'CAISSIER'],
-      title: 'Caisse'
+      role: 'Caissier'
     },
     children: [
       {
         path: 'tickets',
-        name: 'caisse-tickets',
-        component: () => import('@/components/caisse/TicketManager.vue'),
-        meta: {
-          title: 'Gestion des tickets'
-        }
+        name: 'GestionTickets',
+        component: () => import('@/views/caisse/GestionTickets.vue')
+      },
+      {
+        path: 'tickets/nouveau',
+        name: 'NouveauTicket',
+        component: () => import('@/views/caisse/FormulaireTicket.vue')
       },
       {
         path: 'tickets/:id',
-        name: 'caisse-ticket-details',
-        component: () => import('@/components/caisse/TicketDetails.vue'),
-        props: true,
-        meta: {
-          title: 'Détails du ticket'
-        }
+        name: 'DetailTicket',
+        component: () => import('@/views/caisse/DetailTicket.vue'),
+        props: true
       },
       {
-        path: 'avoirs',
-        name: 'caisse-avoirs',
-        component: () => import('@/components/caisse/AvoirManager.vue'),
-        meta: {
-          title: 'Gestion des avoirs'
-        }
+        path: 'paiements',
+        name: 'GestionPaiements',
+        component: () => import('@/views/caisse/GestionPaiements.vue')
       },
       {
-        path: 'fonds',
-        name: 'caisse-fonds',
-        component: () => import('@/components/caisse/FondsManager.vue'),
-        meta: {
-          title: 'Gestion des fonds'
-        }
-      },
-      {
-        path: 'transferts',
-        name: 'caisse-transferts',
-        component: () => import('@/components/caisse/TransfertManager.vue'),
-        meta: {
-          title: 'Transferts entre caisses'
-        }
-      },
-      {
-        path: 'journal',
-        name: 'caisse-journal',
-        component: () => import('@/components/caisse/JournalCaisse.vue'),
-        meta: {
-          title: 'Journal des opérations'
-        }
+        path: 'cloture',
+        name: 'ClotureCaisse',
+        component: () => import('@/views/caisse/ClotureCaisse.vue')
       },
       {
         path: 'rapports',
-        name: 'caisse-rapports',
-        component: () => import('@/components/caisse/RapportsCaisse.vue'),
-        meta: {
-          title: 'Rapports de caisse'
-        }
+        name: 'RapportsCaisse',
+        component: () => import('@/views/caisse/RapportsCaisse.vue')
       },
       {
-        path: 'stats',
-        name: 'caisse-stats',
-        component: () => import('@/components/caisse/StatsCaisse.vue'),
-        meta: {
-          title: 'Statistiques'
-        }
-      },
-      {
-        path: 'config',
-        name: 'caisse-config',
-        component: () => import('@/components/caisse/ConfigCaisse.vue'),
-        meta: {
-          roles: ['ADMIN'],
-          title: 'Configuration'
-        }
-      },
-      {
-        path: 'devises',
-        name: 'caisse-devises',
-        component: () => import('@/components/caisse/GestionDevises.vue'),
-        meta: {
-          roles: ['ADMIN'],
-          title: 'Gestion des devises'
-        }
-      },
-      {
-        path: 'autorisations',
-        name: 'caisse-autorisations',
-        component: () => import('@/components/caisse/AutorisationsCaisse.vue'),
-        meta: {
-          roles: ['ADMIN'],
-          title: 'Gestion des autorisations'
-        }
-      },
-      {
-        path: 'modes-paiement',
-        name: 'caisse-modes-paiement',
-        component: () => import('@/components/caisse/ModePaiementManager.vue'),
-        meta: {
-          roles: ['ADMIN'],
-          title: 'Modes de paiement'
-        }
+        path: 'avoirs',
+        name: 'GestionAvoirs',
+        component: () => import('@/views/caisse/GestionAvoirs.vue')
       },
       {
         path: 'remises',
-        name: 'caisse-remises',
-        component: () => import('@/components/caisse/RemiseManager.vue'),
-        meta: {
-          roles: ['ADMIN'],
-          title: 'Gestion des remises'
-        }
+        name: 'GestionRemises',
+        component: () => import('@/views/caisse/GestionRemises.vue')
       },
       {
-        path: 'impression',
-        name: 'caisse-impression',
-        component: () => import('@/components/caisse/ImpressionManager.vue'),
-        meta: {
-          roles: ['ADMIN'],
-          title: 'Configuration des impressions'
-        }
+        path: 'historique',
+        name: 'HistoriqueCaisse',
+        component: () => import('@/views/caisse/HistoriqueCaisse.vue')
       }
     ]
   }
